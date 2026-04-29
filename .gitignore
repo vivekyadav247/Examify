@@ -19,6 +19,12 @@ venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+*.sqlite3
+
+# Backend runtime/user-uploaded data
+examify_backend/media/
+examify_backend/out.txt
+examify_backend/validate_out.txt
 
 # OS/editor artifacts
 .DS_Store
