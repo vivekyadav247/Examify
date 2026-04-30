@@ -69,6 +69,7 @@ export default function Quiz() {
   const [fetchingMore, setFetchingMore] = useState(false);
   const [total, setTotal] = useState(20);
   const completePosted = useRef(false);
+  const fetchingRef = useRef(false);
   const question = questions[current];
   const query = new URLSearchParams(window.location.search);
   const requestedTopic = query.get("topic");
@@ -82,6 +83,8 @@ export default function Quiz() {
       return;
     }
     let a = true;
+    completePosted.current = false;
+    fetchingRef.current = false;
     (async () => {
       setLoading(true);
       setError("");
@@ -157,7 +160,8 @@ export default function Quiz() {
   ]);
 
   const fetchNextBatch = useCallback(async () => {
-    if (!sessionId || questions.length >= total || fetchingMore) return;
+    if (!sessionId || questions.length >= total || fetchingRef.current) return;
+    fetchingRef.current = true;
     setFetchingMore(true);
     try {
       const r = await apiFetch(`/api/quiz/session/${sessionId}/next-batch/`);
@@ -166,9 +170,10 @@ export default function Quiz() {
         setQuestions((p) => [...p, ...d.questions]);
       }
     } finally {
+      fetchingRef.current = false;
       setFetchingMore(false);
     }
-  }, [apiFetch, sessionId, questions.length, total, fetchingMore]);
+  }, [apiFetch, sessionId, questions.length, total]);
 
   useEffect(() => {
     if (!sessionId || questions.length >= total || fetchingMore) return;
@@ -220,7 +225,7 @@ export default function Quiz() {
     return w;
   }, [sessionResults]);
 
-  const finalizeSession = async () => {
+  const finalizeSession = useCallback(async () => {
     if (!sessionId || completePosted.current) return;
     completePosted.current = true;
     try {
@@ -234,7 +239,7 @@ export default function Quiz() {
       if (d.summary) setSummary(d.summary);
     } catch {}
     window.sessionStorage.removeItem("quiz_in_progress");
-  };
+  }, [apiFetch, sessionId]);
 
   const submitAnswer = async (opt, ft) => {
     if (!question || checking || result || !sessionId) return;
@@ -294,6 +299,12 @@ export default function Quiz() {
     }, 1200);
     return () => clearTimeout(t);
   }, [result, summary, current, total, questions.length, fetchingMore]);
+
+  useEffect(() => {
+    if (!result || summary) return;
+    if (current !== total - 1) return;
+    finalizeSession();
+  }, [result, summary, current, total, finalizeSession]);
 
   if (loading)
     return (
