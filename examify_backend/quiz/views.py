@@ -264,6 +264,40 @@ def _update_leaderboard(user, xp_delta):
     _recompute_ranks(user.exam_target, week_start)
 
 
+def _mark_premium_plan_stale(user):
+    if user.plan != "premium":
+        return
+
+    from analytics.models import PremiumPlanSnapshot
+
+    completed_sessions = QuizSession.objects.filter(
+        user=user,
+        completed_at__isnull=False,
+        exam_target=user.exam_target,
+    ).count()
+    answers_count = SessionAnswer.objects.filter(
+        session__user=user,
+        session__exam_target=user.exam_target,
+        session__completed_at__isnull=False,
+    ).count()
+
+    snapshot, _ = PremiumPlanSnapshot.objects.get_or_create(
+        user=user,
+        exam_target=user.exam_target,
+        defaults={
+            "status": "stale",
+            "source_completed_sessions": completed_sessions,
+            "source_answers_count": answers_count,
+            "plan_payload": {},
+            "last_error": "",
+        },
+    )
+    snapshot.status = "stale"
+    snapshot.source_completed_sessions = completed_sessions
+    snapshot.source_answers_count = answers_count
+    snapshot.save(update_fields=["status", "source_completed_sessions", "source_answers_count", "updated_at"])
+
+
 def _complete_session(session, force=False):
     total_questions = len(session.questions or [])
     answered_queryset = session.answers.all()
@@ -277,11 +311,16 @@ def _complete_session(session, force=False):
     xp_earned = int(aggregate.get("total_xp") or 0)
     score_pct = (correct_count / total_questions * 100.0) if total_questions else 0.0
 
+    just_completed = False
     if session.completed_at is None:
+        just_completed = True
         session.completed_at = timezone.now()
         session.score_pct = round(score_pct, 2)
         session.xp_earned = xp_earned
         session.save(update_fields=["completed_at", "score_pct", "xp_earned"])
+
+    if just_completed:
+        _mark_premium_plan_stale(session.user)
 
     failure_counts = Counter(answered_queryset.values_list("failure_type", flat=True))
     dominant = get_dominant_weakness(
@@ -299,6 +338,38 @@ def _complete_session(session, force=False):
         "score_pct": round(score_pct, 2),
         "xp_earned": xp_earned,
         "dominant_failure_type": dominant,
+    }
+
+
+def _build_simple_dna_summary(dominant_failure, topic_breakdown, score_pct):
+    weak_topics = [topic["topic"] for topic in topic_breakdown if float(topic.get("accuracy_pct") or 0) < 60]
+    strong_topics = [topic["topic"] for topic in topic_breakdown if float(topic.get("accuracy_pct") or 0) >= 75]
+
+    if dominant_failure == "conceptual":
+        next_step = "Revise basics first, then solve easy mixed questions."
+    elif dominant_failure == "silly":
+        next_step = "Add a 10-second verification rule before submitting each answer."
+    elif dominant_failure == "time":
+        next_step = "Practice timed sets daily and skip hard questions faster."
+    elif dominant_failure == "recall":
+        next_step = "Use spaced revision and formula flashcards this week."
+    else:
+        next_step = "Keep consistency and gradually increase quiz difficulty."
+
+    return {
+        "score_band": (
+            "excellent"
+            if score_pct >= 80
+            else "good"
+            if score_pct >= 60
+            else "needs_improvement"
+        ),
+        "headline": (
+            f"Main issue: {dominant_failure.replace('_', ' ') if dominant_failure != 'none' else 'no major weakness detected'}."
+        ),
+        "next_step": next_step,
+        "focus_topics": weak_topics[:3],
+        "stable_topics": strong_topics[:3],
     }
 
 
@@ -938,9 +1009,15 @@ class QuizDNAReportView(APIView):
             k: sum(td["failure_counts"][k] for td in topic_data.values())
             for k in ["conceptual", "silly", "time", "recall"]
         }
+        wrong_count = max(0, total - correct_count)
+        failure_percentages = {
+            key: round((value / wrong_count * 100.0), 1) if wrong_count else 0.0
+            for key, value in all_failure_counts.items()
+        }
         dominant = get_dominant_weakness(all_failure_counts)
         dna_insight = get_dna_insight(dominant)
         improvement_plan = _build_improvement_plan(dominant, topic_breakdown, score_pct)
+        simple_summary = _build_simple_dna_summary(dominant, topic_breakdown, score_pct)
         ai_report = None
         try:
             ai_report = generate_ai_failure_report(
@@ -978,13 +1055,184 @@ class QuizDNAReportView(APIView):
                 "xp_earned": session.xp_earned,
             },
             "dna_breakdown": all_failure_counts,
+            "failure_percentages": failure_percentages,
             "dominant_failure": dominant,
             "dominant_failure_color": get_dna_color(dominant),
             "dna_insight": dna_insight,
+            "simple_summary": simple_summary,
             "topic_breakdown": topic_breakdown,
             "improvement_plan": improvement_plan,
             "ai_report": ai_report,
         }, status=status.HTTP_200_OK)
+
+
+class OverallDNAReportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        sessions = list(
+            QuizSession.objects.filter(
+                user=request.user,
+                exam_target=request.user.exam_target,
+                completed_at__isnull=False,
+            )
+            .order_by("-completed_at")
+            .prefetch_related("answers__question")
+        )
+
+        if not sessions:
+            return Response(
+                {
+                    "exam_target": request.user.exam_target,
+                    "updated_at": timezone.now(),
+                    "sessions_count": 0,
+                    "overall_summary": {
+                        "total_questions": 0,
+                        "correct": 0,
+                        "wrong": 0,
+                        "score_pct": 0.0,
+                        "avg_score_pct": 0.0,
+                    },
+                    "dna_breakdown": _base_dna(),
+                    "failure_percentages": {key: 0.0 for key in _base_dna()},
+                    "dominant_failure": "none",
+                    "dominant_failure_color": get_dna_color("correct"),
+                    "dna_insight": get_dna_insight("none"),
+                    "simple_summary": _build_simple_dna_summary("none", [], 0.0),
+                    "topic_breakdown": [],
+                    "recent_sessions": [],
+                    "improvement_plan": _build_improvement_plan("none", [], 0.0),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        topic_data = {}
+        all_answers = []
+        for session in sessions:
+            session_answers = list(session.answers.all())
+            all_answers.extend(session_answers)
+            for answer in session_answers:
+                topic_name = answer.question.topic
+                subject_name = answer.question.subject
+                if topic_name not in topic_data:
+                    topic_data[topic_name] = {
+                        "topic": topic_name,
+                        "subject": subject_name,
+                        "total": 0,
+                        "correct": 0,
+                        "failure_counts": _base_dna(),
+                        "avg_response_sec_samples": [],
+                    }
+                topic_data[topic_name]["total"] += 1
+                if answer.is_correct:
+                    topic_data[topic_name]["correct"] += 1
+                elif answer.failure_type in topic_data[topic_name]["failure_counts"]:
+                    topic_data[topic_name]["failure_counts"][answer.failure_type] += 1
+                topic_data[topic_name]["avg_response_sec_samples"].append(float(answer.response_time))
+
+        total_questions = len(all_answers)
+        correct_count = sum(1 for answer in all_answers if answer.is_correct)
+        wrong_count = max(0, total_questions - correct_count)
+        score_pct = round((correct_count / total_questions * 100.0) if total_questions else 0.0, 1)
+        avg_score_pct = round(
+            sum(float(session.score_pct or 0.0) for session in sessions) / len(sessions),
+            1,
+        )
+
+        topic_names = list(topic_data.keys())
+        profiles = {
+            profile.topic_name: profile
+            for profile in TopicProfile.objects.filter(
+                user=request.user,
+                exam_target=request.user.exam_target,
+                topic_name__in=topic_names,
+            )
+        }
+
+        topic_breakdown = []
+        for topic_name, item in topic_data.items():
+            profile = profiles.get(topic_name)
+            accuracy_pct = round((item["correct"] / item["total"] * 100.0), 1) if item["total"] else 0.0
+            dominant = get_dominant_weakness(item["failure_counts"])
+            avg_response_sec = (
+                round(sum(item["avg_response_sec_samples"]) / len(item["avg_response_sec_samples"]), 1)
+                if item["avg_response_sec_samples"]
+                else 0.0
+            )
+            topic_breakdown.append(
+                {
+                    "topic": item["topic"],
+                    "subject": item["subject"],
+                    "total": item["total"],
+                    "correct": item["correct"],
+                    "accuracy_pct": accuracy_pct,
+                    "avg_response_sec": avg_response_sec,
+                    "failure_counts": item["failure_counts"],
+                    "dominant_failure": dominant,
+                    "dominant_failure_color": get_dna_color(dominant) if dominant != "none" else "#10B981",
+                    "ability_score": round(float(profile.ability_score), 3) if profile else None,
+                    "ability_label": classify_ability(profile.ability_score) if profile else "unknown",
+                    "stars": int(profile.stars) if profile else 0,
+                }
+            )
+
+        topic_breakdown.sort(key=lambda row: row["accuracy_pct"])
+
+        dna_breakdown = {
+            key: sum(topic["failure_counts"][key] for topic in topic_breakdown)
+            for key in _base_dna()
+        }
+        failure_percentages = {
+            key: round((value / wrong_count * 100.0), 1) if wrong_count else 0.0
+            for key, value in dna_breakdown.items()
+        }
+        dominant = get_dominant_weakness(dna_breakdown)
+
+        recent_sessions = []
+        for session in sessions[:5]:
+            session_answers = list(session.answers.all())
+            failure_counts = Counter(answer.failure_type for answer in session_answers)
+            recent_sessions.append(
+                {
+                    "session_id": str(session.id),
+                    "completed_at": session.completed_at,
+                    "score_pct": round(float(session.score_pct or 0.0), 2),
+                    "xp_earned": int(session.xp_earned or 0),
+                    "dominant_failure": get_dominant_weakness(
+                        {
+                            "conceptual": failure_counts.get("conceptual", 0),
+                            "silly": failure_counts.get("silly", 0),
+                            "time": failure_counts.get("time", 0),
+                            "recall": failure_counts.get("recall", 0),
+                        }
+                    ),
+                }
+            )
+
+        return Response(
+            {
+                "exam_target": request.user.exam_target,
+                "updated_at": timezone.now(),
+                "sessions_count": len(sessions),
+                "overall_summary": {
+                    "total_questions": total_questions,
+                    "correct": correct_count,
+                    "wrong": wrong_count,
+                    "score_pct": score_pct,
+                    "avg_score_pct": avg_score_pct,
+                },
+                "dna_breakdown": dna_breakdown,
+                "failure_percentages": failure_percentages,
+                "dominant_failure": dominant,
+                "dominant_failure_color": get_dna_color(dominant) if dominant != "none" else "#10B981",
+                "dna_insight": get_dna_insight(dominant),
+                "simple_summary": _build_simple_dna_summary(dominant, topic_breakdown, score_pct),
+                "topic_breakdown": topic_breakdown[:12],
+                "recent_sessions": recent_sessions,
+                "improvement_plan": _build_improvement_plan(dominant, topic_breakdown, score_pct),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 def _build_improvement_plan(dominant_failure, topic_breakdown, score_pct):

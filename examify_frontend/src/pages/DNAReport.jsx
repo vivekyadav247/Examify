@@ -156,6 +156,7 @@ export default function DNAReport() {
   const score = data.session_summary?.correct || 0;
   const total = data.session_summary?.total_questions || 10;
   const accuracy = total ? Math.round((score / total) * 100) : 0;
+  const simpleSummary = data.simple_summary || null;
 
   return (
     <AppShell activePath="/dna-report">
@@ -211,6 +212,42 @@ export default function DNAReport() {
             </div>
           </div>
         </section>
+
+        {simpleSummary && (
+          <section
+            className="rounded-3xl border p-6"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+            }}
+          >
+            <h2 className="font-display text-2xl">Simple Report</h2>
+            <p className="mt-3 text-sm" style={{ color: "var(--text-secondary)" }}>
+              {simpleSummary.headline}
+            </p>
+            <p className="mt-2 text-sm">{simpleSummary.next_step}</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div
+                className="rounded-xl p-3 text-sm"
+                style={{ backgroundColor: "var(--surface-2)" }}
+              >
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Focus Topics
+                </p>
+                <p>{(simpleSummary.focus_topics || []).join(", ") || "-"}</p>
+              </div>
+              <div
+                className="rounded-xl p-3 text-sm"
+                style={{ backgroundColor: "var(--surface-2)" }}
+              >
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Stable Topics
+                </p>
+                <p>{(simpleSummary.stable_topics || []).join(", ") || "-"}</p>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Failure DNA Chart */}
         <section

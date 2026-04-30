@@ -11,6 +11,7 @@ from engines.topic_graph import EXAM_SUBJECTS
 DEFAULT_MODEL = "anthropic/claude-3-haiku"
 EXPLANATION_MODEL = "anthropic/claude-3-sonnet"
 DNA_REPORT_MODEL = "anthropic/claude-3-sonnet"
+STUDY_PLAN_MODEL = "anthropic/claude-3-sonnet"
 
 logger = logging.getLogger(__name__)
 
@@ -546,5 +547,82 @@ def generate_ai_failure_report(
         "priority_fixes": [str(x).strip() for x in (obj.get("priority_fixes") or []) if str(x).strip()][:3],
         "next_3_sessions": [str(x).strip() for x in (obj.get("next_3_sessions") or []) if str(x).strip()][:3],
         "study_protocol_7d": [str(x).strip() for x in (obj.get("study_protocol_7d") or []) if str(x).strip()][:4],
+        "motivation": str(obj.get("motivation", "")).strip(),
+    }
+
+
+def generate_ai_study_plan(exam, user_snapshot, performance_snapshot):
+    """Generate a structured premium study plan using AI."""
+    prompt = (
+        "You are an expert exam strategist building a practical study plan.\n"
+        f"Exam target: {exam}\n\n"
+        "You are given user context JSON:\n"
+        f"user_snapshot={json.dumps(user_snapshot, ensure_ascii=True)}\n"
+        f"performance_snapshot={json.dumps(performance_snapshot, ensure_ascii=True)}\n\n"
+        "Return ONLY valid JSON with this exact schema:\n"
+        "{"
+        '"plan_title": string,'
+        '"one_line_focus": string,'
+        '"today_plan": [{"task": string, "topic": string, "duration_min": int, "reason": string}],'
+        '"weekly_plan": [{"day": int, "focus": string, "topics": [string], "quiz_goal": string, "revision_goal": string}],'
+        '"priority_rules": [string, string, string],'
+        '"review_checkpoints": [string, string, string],'
+        '"motivation": string'
+        "}\n"
+        "Rules:\n"
+        "1) Use topic names from the provided data.\n"
+        "2) Keep tasks short, concrete, and student-friendly.\n"
+        "3) weekly_plan must have exactly 7 day entries.\n"
+        "4) Do not include markdown or extra text."
+    )
+
+    raw = _call_openrouter(prompt, STUDY_PLAN_MODEL, max_tokens=1200, temperature=0.25)
+    obj = _extract_json_object(raw)
+    if not isinstance(obj, dict):
+        raise ValueError("Invalid AI study plan payload")
+
+    today_plan = []
+    for row in (obj.get("today_plan") or [])[:4]:
+        if not isinstance(row, dict):
+            continue
+        try:
+            duration = int(row.get("duration_min", 20))
+        except (TypeError, ValueError):
+            duration = 20
+        today_plan.append(
+            {
+                "task": str(row.get("task", "")).strip(),
+                "topic": str(row.get("topic", "")).strip(),
+                "duration_min": max(10, min(duration, 120)),
+                "reason": str(row.get("reason", "")).strip(),
+            }
+        )
+
+    weekly_plan = []
+    for row in (obj.get("weekly_plan") or [])[:7]:
+        if not isinstance(row, dict):
+            continue
+        try:
+            day = int(row.get("day", len(weekly_plan) + 1))
+        except (TypeError, ValueError):
+            day = len(weekly_plan) + 1
+        topics = [str(topic).strip() for topic in (row.get("topics") or []) if str(topic).strip()][:3]
+        weekly_plan.append(
+            {
+                "day": max(1, min(day, 7)),
+                "focus": str(row.get("focus", "")).strip(),
+                "topics": topics,
+                "quiz_goal": str(row.get("quiz_goal", "")).strip(),
+                "revision_goal": str(row.get("revision_goal", "")).strip(),
+            }
+        )
+
+    return {
+        "plan_title": str(obj.get("plan_title", "")).strip(),
+        "one_line_focus": str(obj.get("one_line_focus", "")).strip(),
+        "today_plan": today_plan,
+        "weekly_plan": weekly_plan,
+        "priority_rules": [str(x).strip() for x in (obj.get("priority_rules") or []) if str(x).strip()][:3],
+        "review_checkpoints": [str(x).strip() for x in (obj.get("review_checkpoints") or []) if str(x).strip()][:3],
         "motivation": str(obj.get("motivation", "")).strip(),
     }

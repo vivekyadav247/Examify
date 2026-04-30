@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     ContentQuizStartView,
     DiagnosticStartView,
+    OverallDNAReportView,
     QuizAnswerView,
     QuizDNAReportView,
     QuizHistoryView,
@@ -30,4 +31,5 @@ urlpatterns = [
         QuizDNAReportView.as_view(),
         name="quiz-dna-report",
     ),
+    path("dna/profile/", OverallDNAReportView.as_view(), name="quiz-dna-profile-report"),
 ]

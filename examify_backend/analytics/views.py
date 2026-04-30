@@ -9,10 +9,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from engines.failure_dna import get_dna_insight, get_dominant_weakness
+from engines.question_gen import generate_ai_study_plan
 from engines.scheduler import compute_readiness
 from engines.topic_graph import EXAM_SUBJECTS, build_topic_graph, build_vertical_plan_graph, get_topic_unlock_status
 from quiz.models import QuizSession, SessionAnswer
 from users.models import EXAM_TARGET_CHOICES, LeaderboardEntry, TopicProfile
+
+from .models import PremiumPlanSnapshot
 
 
 def _week_start_for_date(value):
@@ -26,6 +29,90 @@ def _build_failure_counts(profiles):
         for key in ("conceptual", "silly", "time", "recall"):
             merged[key] += int(dna.get(key, 0))
     return merged
+
+
+def _build_premium_plan_fallback(user, profiles, completed_sessions, dna_breakdown):
+    weak_profiles = sorted(
+        profiles,
+        key=lambda profile: (float(profile.ability_score), float(profile.accuracy_pct)),
+    )
+    weak_topics = [profile.topic_name for profile in weak_profiles if profile.topic_name]
+    weak_topics = weak_topics[:8]
+
+    dominant_failure = get_dominant_weakness(dna_breakdown)
+    failure_to_focus = {
+        "conceptual": "concept clarity",
+        "silly": "answer verification",
+        "time": "timed execution",
+        "recall": "revision memory",
+        "none": "consistency",
+    }
+
+    today_topics = weak_topics[:3]
+    if not today_topics and weak_profiles:
+        today_topics = [weak_profiles[0].topic_name]
+
+    today_plan = []
+    for idx, topic in enumerate(today_topics, start=1):
+        today_plan.append(
+            {
+                "task": f"Focused practice set {idx}",
+                "topic": topic,
+                "duration_min": 25,
+                "reason": f"Improve {failure_to_focus.get(dominant_failure, 'accuracy')} using this weak topic.",
+            }
+        )
+    if today_topics:
+        today_plan.append(
+            {
+                "task": "Error review",
+                "topic": today_topics[0],
+                "duration_min": 15,
+                "reason": "Review mistakes from recent quizzes and rewrite the correct logic.",
+            }
+        )
+
+    weekly_plan = []
+    if not weak_topics:
+        weak_topics = ["Mixed Revision"]
+    for day in range(1, 8):
+        base_index = (day - 1) % len(weak_topics)
+        day_topics = [weak_topics[base_index]]
+        if len(weak_topics) > 1:
+            day_topics.append(weak_topics[(base_index + 1) % len(weak_topics)])
+        weekly_plan.append(
+            {
+                "day": day,
+                "focus": failure_to_focus.get(dominant_failure, "consistency"),
+                "topics": day_topics,
+                "quiz_goal": f"Attempt 1 timed quiz on {day_topics[0]}.",
+                "revision_goal": f"Revise formulas/notes for {', '.join(day_topics)}.",
+            }
+        )
+
+    return {
+        "plan_title": "Adaptive Premium Plan",
+        "one_line_focus": f"Main focus this week: {failure_to_focus.get(dominant_failure, 'consistency')}.",
+        "today_plan": today_plan,
+        "weekly_plan": weekly_plan,
+        "priority_rules": [
+            "Attempt quizzes in fixed time blocks.",
+            "Write one mistake note for each wrong answer.",
+            "Re-attempt weak topics within 48 hours.",
+        ],
+        "review_checkpoints": [
+            "Check day-3 quiz accuracy trend.",
+            "Check whether dominant failure is reducing.",
+            "Adjust next-week topics using latest quiz report.",
+        ],
+        "motivation": "Progress compounds when you review mistakes quickly.",
+        "generation_mode": "fallback",
+        "inputs": {
+            "completed_sessions": int(completed_sessions),
+            "weak_topics_used": weak_topics[:5],
+            "dominant_failure": dominant_failure,
+        },
+    }
 
 
 def _ensure_topic_profiles_for_exam(user, exam_target, weak_subjects=None):
@@ -139,6 +226,161 @@ class DnaSummaryView(APIView):
                 "counts": dict(counts),
                 "dominant_failure_type": dominant,
                 "insight": get_dna_insight(dominant),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class PremiumPlanEngineView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        if user.plan != "premium":
+            return Response({"detail": "premium_required"}, status=status.HTTP_403_FORBIDDEN)
+
+        refresh_flag = str(request.query_params.get("refresh", "0")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+        }
+
+        completed_sessions_qs = QuizSession.objects.filter(
+            user=user,
+            exam_target=user.exam_target,
+            completed_at__isnull=False,
+        ).order_by("-completed_at")
+        completed_sessions_count = completed_sessions_qs.count()
+
+        answers_qs = SessionAnswer.objects.filter(
+            session__user=user,
+            session__exam_target=user.exam_target,
+            session__completed_at__isnull=False,
+        ).select_related("question")
+        answers_count = answers_qs.count()
+
+        snapshot, _ = PremiumPlanSnapshot.objects.get_or_create(
+            user=user,
+            exam_target=user.exam_target,
+            defaults={
+                "status": "stale",
+                "source_completed_sessions": completed_sessions_count,
+                "source_answers_count": answers_count,
+                "plan_payload": {},
+                "last_error": "",
+            },
+        )
+
+        payload = dict(snapshot.plan_payload or {})
+        same_source = (
+            int(snapshot.source_completed_sessions) == int(completed_sessions_count)
+            and int(snapshot.source_answers_count) == int(answers_count)
+        )
+        should_refresh = (
+            refresh_flag
+            or snapshot.status != "fresh"
+            or not payload
+            or not same_source
+        )
+
+        if should_refresh:
+            profiles = list(
+                TopicProfile.objects.filter(user=user, exam_target=user.exam_target)
+            )
+            dna_counter = Counter(
+                answers_qs.values_list("failure_type", flat=True)
+            )
+            dna_breakdown = {
+                "conceptual": int(dna_counter.get("conceptual", 0)),
+                "silly": int(dna_counter.get("silly", 0)),
+                "time": int(dna_counter.get("time", 0)),
+                "recall": int(dna_counter.get("recall", 0)),
+            }
+
+            fallback_payload = _build_premium_plan_fallback(
+                user=user,
+                profiles=profiles,
+                completed_sessions=completed_sessions_count,
+                dna_breakdown=dna_breakdown,
+            )
+
+            ai_payload = None
+            ai_error = ""
+            try:
+                weak_topics_context = [
+                    {
+                        "topic": profile.topic_name,
+                        "subject": profile.subject,
+                        "ability_score": round(float(profile.ability_score), 3),
+                        "accuracy_pct": round(float(profile.accuracy_pct), 2),
+                    }
+                    for profile in sorted(profiles, key=lambda profile: profile.ability_score)[:8]
+                ]
+                recent_sessions = [
+                    {
+                        "score_pct": round(float(session.score_pct or 0.0), 2),
+                        "session_type": session.session_type,
+                        "xp_earned": int(session.xp_earned or 0),
+                        "completed_at": session.completed_at.isoformat() if session.completed_at else None,
+                    }
+                    for session in completed_sessions_qs[:5]
+                ]
+                ai_payload = generate_ai_study_plan(
+                    exam=user.exam_target,
+                    user_snapshot={
+                        "plan": user.plan,
+                        "level": int(user.level),
+                        "streak": int(user.streak),
+                        "xp": int(user.xp),
+                        "weak_topics": weak_topics_context,
+                    },
+                    performance_snapshot={
+                        "completed_sessions": completed_sessions_count,
+                        "answers_count": answers_count,
+                        "dominant_failure": get_dominant_weakness(dna_breakdown),
+                        "dna_breakdown": dna_breakdown,
+                        "recent_sessions": recent_sessions,
+                    },
+                )
+            except Exception as exc:
+                ai_error = str(exc)
+
+            merged_payload = dict(fallback_payload)
+            if isinstance(ai_payload, dict) and ai_payload.get("today_plan"):
+                merged_payload.update(ai_payload)
+                merged_payload["generation_mode"] = "ai"
+            else:
+                merged_payload["generation_mode"] = "fallback"
+
+            snapshot.status = "fresh"
+            snapshot.generated_at = timezone.now()
+            snapshot.source_completed_sessions = completed_sessions_count
+            snapshot.source_answers_count = answers_count
+            snapshot.plan_payload = merged_payload
+            snapshot.last_error = ai_error
+            snapshot.save(
+                update_fields=[
+                    "status",
+                    "generated_at",
+                    "source_completed_sessions",
+                    "source_answers_count",
+                    "plan_payload",
+                    "last_error",
+                    "updated_at",
+                ]
+            )
+            payload = merged_payload
+
+        return Response(
+            {
+                "exam_target": user.exam_target,
+                "status": snapshot.status,
+                "generated_at": snapshot.generated_at,
+                "source_completed_sessions": int(snapshot.source_completed_sessions),
+                "source_answers_count": int(snapshot.source_answers_count),
+                "auto_update_policy": "after_each_completed_quiz",
+                "plan": payload,
             },
             status=status.HTTP_200_OK,
         )

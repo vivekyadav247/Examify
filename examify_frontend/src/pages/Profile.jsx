@@ -12,30 +12,52 @@ function avgAccuracy(rows) {
   return Math.round(total / list.length);
 }
 
+function toTitle(value) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (s) => s.toUpperCase());
+}
+
 export default function Profile() {
   const { apiFetch, setToken } = useApiClient();
   const [user, setUser] = useState(null);
   const [stats, setStats] = useState(null);
   const [dashboard, setDashboard] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [overallDna, setOverallDna] = useState(null);
+  const [premiumPlan, setPremiumPlan] = useState(null);
+  const [refreshingPlan, setRefreshingPlan] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const [ur, sr, dr] = await Promise.all([
+        const [ur, sr, dr, dnar] = await Promise.all([
           apiFetch("/api/users/me/"),
           apiFetch("/api/users/stats/"),
           apiFetch("/api/analytics/dashboard/"),
+          apiFetch("/api/quiz/dna/profile/"),
         ]);
         const u = ur.ok ? await ur.json() : null;
         const s = sr.ok ? await sr.json() : null;
         const d = dr.ok ? await dr.json() : null;
+        const dna = dnar.ok ? await dnar.json() : null;
         if (!active) return;
         setUser(u);
         setStats(s);
         setDashboard(d);
+        setOverallDna(dna);
+
+        if (u?.plan === "premium") {
+          const pr = await apiFetch("/api/analytics/premium-plan/");
+          if (!active) return;
+          const pd = pr.ok ? await pr.json() : null;
+          setPremiumPlan(pd);
+        } else {
+          setPremiumPlan(null);
+        }
+
         if (d?.exam_target) {
           const lr = await apiFetch(
             `/api/users/leaderboard/${encodeURIComponent(d.exam_target)}/?limit=10`,
@@ -65,6 +87,26 @@ export default function Profile() {
     );
     return `${sorted[0].topic} (${Math.round(Number(sorted[0].accuracy_pct || 0))}%)`;
   }, [dashboard?.weak_topics]);
+
+  const totalDnaFailures = useMemo(() => {
+    const breakdown = overallDna?.dna_breakdown || {};
+    return ["conceptual", "silly", "time", "recall"].reduce(
+      (sum, key) => sum + Number(breakdown[key] || 0),
+      0,
+    );
+  }, [overallDna?.dna_breakdown]);
+
+  const refreshPremiumPlan = async () => {
+    if (!user || user.plan !== "premium" || refreshingPlan) return;
+    setRefreshingPlan(true);
+    try {
+      const response = await apiFetch("/api/analytics/premium-plan/?refresh=1");
+      const payload = response.ok ? await response.json() : null;
+      setPremiumPlan(payload);
+    } finally {
+      setRefreshingPlan(false);
+    }
+  };
 
   if (error)
     return (
@@ -164,6 +206,105 @@ export default function Profile() {
           </article>
         </section>
 
+        <section
+          className="mb-6 rounded-2xl border p-4"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface)",
+          }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-display text-xl">Cumulative DNA Report</h2>
+              <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                Updated from all completed quizzes for this student profile.
+              </p>
+            </div>
+            <a
+              href="/dna-report"
+              className="rounded-full border px-4 py-2 text-xs font-semibold"
+              style={{ borderColor: "var(--border)" }}
+            >
+              Open Last Session Report
+            </a>
+          </div>
+
+          <div className="mt-4 grid gap-3 grid-cols-2 md:grid-cols-4">
+            <article
+              className="rounded-xl p-3"
+              style={{ backgroundColor: "var(--surface-2)" }}
+            >
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Sessions
+              </p>
+              <p className="mt-1 text-lg font-semibold">
+                {overallDna?.sessions_count ?? 0}
+              </p>
+            </article>
+            <article
+              className="rounded-xl p-3"
+              style={{ backgroundColor: "var(--surface-2)" }}
+            >
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Overall Score
+              </p>
+              <p className="mt-1 text-lg font-semibold">
+                {Math.round(Number(overallDna?.overall_summary?.score_pct || 0))}
+                %
+              </p>
+            </article>
+            <article
+              className="rounded-xl p-3"
+              style={{ backgroundColor: "var(--surface-2)" }}
+            >
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Dominant Failure
+              </p>
+              <p className="mt-1 text-lg font-semibold">
+                {toTitle(overallDna?.dominant_failure || "none")}
+              </p>
+            </article>
+            <article
+              className="rounded-xl p-3"
+              style={{ backgroundColor: "var(--surface-2)" }}
+            >
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Total Failures
+              </p>
+              <p className="mt-1 text-lg font-semibold">{totalDnaFailures}</p>
+            </article>
+          </div>
+
+          <p className="mt-3 text-sm" style={{ color: "var(--text-secondary)" }}>
+            {overallDna?.simple_summary?.headline || "No DNA signal yet."}{" "}
+            {overallDna?.simple_summary?.next_step || ""}
+          </p>
+
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {["conceptual", "silly", "time", "recall"].map((key) => {
+              const value = Number(overallDna?.dna_breakdown?.[key] || 0);
+              const pct = Number(overallDna?.failure_percentages?.[key] || 0);
+              return (
+                <div
+                  key={key}
+                  className="rounded-xl border p-3"
+                  style={{
+                    borderColor: "var(--border)",
+                    backgroundColor: "var(--surface-2)",
+                  }}
+                >
+                  <div className="flex items-center justify-between text-sm">
+                    <span>{toTitle(key)}</span>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      {value} ({pct}%)
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="grid gap-4 md:grid-cols-2">
           <article
             className="rounded-2xl border p-4"
@@ -234,6 +375,63 @@ export default function Profile() {
             </div>
           </article>
         </section>
+
+        {user.plan === "premium" && (
+          <section
+            className="mt-6 rounded-2xl border p-4"
+            style={{
+              borderColor: "var(--border)",
+              backgroundColor: "var(--surface)",
+            }}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="font-display text-xl">AI Plan Engine</h2>
+                <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                  One active premium plan. It refreshes after each completed quiz.
+                </p>
+              </div>
+              <button
+                onClick={refreshPremiumPlan}
+                disabled={refreshingPlan}
+                className="rounded-full px-4 py-2 text-xs font-semibold"
+                style={{
+                  backgroundColor: "var(--accent)",
+                  color: "var(--bg)",
+                  opacity: refreshingPlan ? 0.7 : 1,
+                }}
+              >
+                {refreshingPlan ? "Refreshing..." : "Refresh Plan"}
+              </button>
+            </div>
+
+            <p className="mt-3 text-sm">
+              {premiumPlan?.plan?.one_line_focus || "Plan will appear after your first completed quiz."}
+            </p>
+
+            {!!premiumPlan?.plan?.today_plan?.length && (
+              <div className="mt-3 space-y-2">
+                {(premiumPlan.plan.today_plan || []).slice(0, 4).map((task, idx) => (
+                  <article
+                    key={`${task.task}-${idx}`}
+                    className="rounded-xl border p-3"
+                    style={{
+                      borderColor: "var(--border)",
+                      backgroundColor: "var(--surface-2)",
+                    }}
+                  >
+                    <p className="text-sm font-semibold">
+                      {idx + 1}. {task.task} ({task.duration_min} min)
+                    </p>
+                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                      {task.topic}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </AppShell>
   );
