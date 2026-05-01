@@ -242,45 +242,51 @@ class GeneratePlanView(APIView):
 
     def post(self, request):
         exam = request.data.get("exam", "upsc")
-        exam_date = request.data.get("exam_date", "")
-        daily_hours = request.data.get("daily_hours", 6)
-        weak_subjects = request.data.get("weak_subjects", [])
-        current_level = request.data.get("current_level", "beginner")
+        persona = request.data.get("persona", "scholar") # scholar or dropout
+        
+        # Automatic exam month estimation if not provided
+        current_month = "May" 
+        estimated_exam_month = "June" if exam == "jee" else "October" if exam == "upsc" else "August"
 
-        prompt = f"""Create a highly detailed visual study plan (Candy Crush map style) for a student preparing for {exam.upper()} exam.
-Exam Date: {exam_date or 'Not specified'}
-Daily Study Hours: {daily_hours} hours
-Current Level: {current_level}
-Weak Subjects (needs extra attention): {', '.join(weak_subjects) if weak_subjects else 'None specified'}
+        prompt = f"""Create a premium vertical 'Candy Crush' style study roadmap for a {persona} student preparing for {exam.upper()}.
+Current Month: {current_month}
+Target Exam Month: {estimated_exam_month}
+Student Type: {persona.upper()} (Adjust intensity and tone accordingly)
 
-Structure the plan into levels (like game levels/weeks). For each level, detail specific tasks and topics.
-Return as JSON:
+Return exactly 12 nodes for a vertical progression.
+Each node must have:
+- id: unique string
+- label: Topic name
+- status: 'locked' (always for new plan)
+- subject: Subject name
+- type: 'video' | 'quiz' | 'revision'
+- flag: 'dark' | 'gold' | 'silver' (use 'dark' for hard topics)
+
+Return ONLY valid JSON:
 {{
-  "total_weeks": 12,
-  "revision_rounds": 2,
-  "weeks": [
+  "exam_target": "{exam}",
+  "persona": "{persona}",
+  "estimated_exam": "{estimated_exam_month}",
+  "nodes": [
     {{
-      "theme": "Foundation Phase - Week 1",
-      "description": "Focus on basics and building concepts",
-      "days": [
-        {{
-          "day": "Monday",
-          "tasks": [
-            {{"subject": "History", "duration": "2h", "activity": "Read Ch 1-3"}}
-          ]
-        }}
-      ]
+      "id": "node_1",
+      "label": "Atomic Structure Basics",
+      "subject": "Chemistry",
+      "type": "video",
+      "flag": "gold",
+      "description": "Master the fundamentals of Bohr's model."
     }}
   ]
 }}
-Create at least 4 weeks. Return ONLY JSON."""
+Return ONLY JSON."""
 
         raw = ai_complete(prompt, max_tokens=3000)
         try:
             data = json.loads(raw.strip().lstrip("```json").rstrip("```"))
             return Response(data)
         except Exception:
-            return Response({"raw_plan": raw, "total_weeks": "N/A", "revision_rounds": 2})
+            return Response({"error": "Failed to parse AI plan", "raw": raw}, status=500)
+
 
 
 # ============================================================

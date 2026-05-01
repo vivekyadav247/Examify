@@ -56,18 +56,23 @@ export default function RankPredictorPage() {
   const fetchLatestMockAndPredict = async () => {
     setLoading(true);
     try {
+      const examMap = {
+        "UPSC_CSE": "upsc", "UPSC_IFS": "upsc",
+        "JEE_Mains": "jee", "JEE_Advanced": "jee",
+        "NEET": "neet",
+        "SSC_CGL": "ssc_cgl", "SSC_CHSL": "ssc_cgl",
+      };
+
       // 1. Get user profile for exam target
+      let target = "UPSC_CSE";
       const userRes = await apiFetch("/api/users/me/");
       if (userRes.ok) {
         const userData = await userRes.json();
-        const examMap = {
-          "UPSC_CSE": "upsc", "UPSC_IFS": "upsc",
-          "JEE_Mains": "jee", "JEE_Advanced": "jee",
-          "NEET": "neet",
-          "SSC_CGL": "ssc_cgl", "SSC_CHSL": "ssc_cgl",
-        };
-        setUserExam(examMap[userData.exam_target] || "upsc");
+        target = userData.exam_target || "UPSC_CSE";
+        setUserExam(examMap[target] || "upsc");
       }
+
+      const currentExamKey = examMap[target] || "upsc";
 
       // 2. Get latest mock test results from DNA report
       const dnaRes = await apiFetch(`/api/analytics/dna-full/`);
@@ -79,19 +84,12 @@ export default function RankPredictorPage() {
         return;
       }
 
-      const latestSession = dnaData.sessions[0]; // the most recent session
+      const latestSession = dnaData.sessions[0]; 
+      const config = EXAM_CONFIGS[currentExamKey] || EXAM_CONFIGS["upsc"];
       
-      // Calculate scores based on the session accuracy and questions
-      const config = EXAM_CONFIGS[userExam] || EXAM_CONFIGS["upsc"];
-      
-      // If the session didn't have full questions, we extrapolate the percentage to the full exam
-      const sessionScorePct = latestSession.score || 0; 
+      const sessionScorePct = latestSession.score || latestSession.percentage || 0; 
       const estimatedMarks = (sessionScorePct / 100) * config.max_marks;
-      
-      const estimatedRank = Math.round(
-        config.total_candidates * (1 - sessionScorePct / 100) * 0.7
-      );
-      
+      const estimatedRank = Math.round(config.total_candidates * (1 - sessionScorePct / 100) * 0.7);
       const passed = estimatedMarks >= config.cutoff_range[0];
 
       // 3. Ask AI for deeper analysis
@@ -99,10 +97,10 @@ export default function RankPredictorPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          exam: userExam, 
+          exam: target, // Send the real exam target to backend
           marks: estimatedMarks, 
           percentage: sessionScorePct, 
-          category: "general", // We can default to general or fetch from profile
+          category: "general",
           estimatedRank 
         }),
       });
@@ -121,6 +119,7 @@ export default function RankPredictorPage() {
         ...aiData
       });
     } catch (err) {
+
       console.error(err);
       setError("Failed to generate rank prediction. Please try again later.");
     }
@@ -136,126 +135,156 @@ export default function RankPredictorPage() {
 
   return (
     <AppShell activePath={window.location.pathname}>
-      <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6 flex flex-col items-center">
-        <div className="w-full max-w-4xl">
-          <div className="mb-8 flex items-center justify-between">
+      <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6 flex flex-col items-center font-sans">
+        <div className="w-full max-w-5xl">
+          <div className="mb-10 flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold flex items-center gap-3 mb-2">
-                <Trophy className="text-yellow-400" size={32} /> Rank Predictor
+              <h1 className="text-4xl font-black flex items-center gap-3 mb-2 tracking-tight">
+                <Trophy className="text-yellow-400" size={40} /> Rank Predictor
               </h1>
-              <p className="text-[var(--text-muted)]">Automatic AI prediction based on your latest Mock Test</p>
+              <p className="text-gray-400 font-medium">Professional AI analysis of your {prediction?.exam_name || "exam"} performance</p>
             </div>
             {prediction && (
-              <button onClick={fetchLatestMockAndPredict} className="px-4 py-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-xl hover:bg-[var(--surface)] text-sm font-semibold transition-colors">
-                Refresh Prediction
+              <button onClick={fetchLatestMockAndPredict} className="px-5 py-2 bg-gray-900 border border-gray-800 rounded-2xl hover:border-gray-600 text-sm font-bold transition-all">
+                Recalculate
               </button>
             )}
           </div>
 
           {loading ? (
-            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-12 text-center flex flex-col items-center">
-              <div className="w-12 h-12 border-4 border-[var(--accent)] border-t-transparent rounded-full animate-spin mb-4"></div>
-              <h3 className="text-xl font-bold text-[var(--text)] mb-2">Analyzing your Mock Test Data</h3>
-              <p className="text-[var(--text-muted)]">Running your performance against {EXAM_CONFIGS[userExam]?.total_candidates?.toLocaleString() || "millions of"} candidates...</p>
+            <div className="bg-gray-950 border border-gray-900 rounded-[2.5rem] p-20 text-center flex flex-col items-center shadow-2xl">
+              <div className="w-16 h-16 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+              <h3 className="text-2xl font-bold text-white mb-2">Analyzing Performance Matrix</h3>
+              <p className="text-gray-500 max-w-sm">Comparing your mock test signatures against millions of past data points...</p>
             </div>
           ) : error ? (
-            <div className="bg-[var(--surface)] border border-red-900/50 rounded-2xl p-8 text-center flex flex-col items-center">
-              <AlertTriangle className="text-red-500 mb-4" size={48} />
-              <h3 className="text-xl font-bold text-[var(--text)] mb-2">No Mock Test Found</h3>
-              <p className="text-[var(--text-muted)] mb-6">{error}</p>
+            <div className="bg-gray-950 border border-red-900/30 rounded-[2.5rem] p-12 text-center flex flex-col items-center">
+              <AlertTriangle className="text-red-500 mb-6" size={64} />
+              <h3 className="text-2xl font-bold text-white mb-3">Analysis Not Available</h3>
+              <p className="text-gray-400 mb-8 max-w-md">{error}</p>
               <button 
                 onClick={() => window.location.href='/mock-test'}
-                className="bg-[var(--accent)] text-[var(--bg)] font-bold py-3 px-6 rounded-xl transition-colors hover:scale-105"
+                className="bg-yellow-500 text-black font-black py-4 px-10 rounded-2xl transition-transform hover:scale-105 shadow-[0_0_30px_rgba(234,179,8,0.3)]"
               >
-                Take a Mock Test Now
+                Start Mock Test
               </button>
             </div>
           ) : prediction && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-6">
-                {/* Main Result Card */}
-                <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-8 text-center relative overflow-hidden shadow-xl">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--accent)] opacity-5 blur-3xl rounded-full"></div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-8">
+                {/* Score & Prediction Table Card */}
+                <div className="bg-gray-950 border border-gray-900 rounded-[2.5rem] overflow-hidden shadow-2xl">
+                  <div className="bg-gradient-to-r from-yellow-500/10 to-transparent p-8 border-b border-gray-900">
+                    <div className="flex justify-between items-end">
+                      <div>
+                        <p className="text-yellow-500 font-bold text-xs tracking-widest uppercase mb-1">Current Score</p>
+                        <h2 className="text-6xl font-black text-white tracking-tighter">
+                          {Math.round(prediction.marks)}<span className="text-2xl text-gray-600 font-medium ml-2">/ {prediction.max_marks}</span>
+                        </h2>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-gray-500 text-xs font-bold uppercase mb-1">Verdict</p>
+                        <div className={`text-xl font-black px-4 py-1 rounded-full ${
+                          prediction.verdict === "Scholar" ? "bg-green-500/20 text-green-400" :
+                          prediction.verdict === "Borderline" ? "bg-yellow-500/20 text-yellow-400" : "bg-red-500/20 text-red-400"
+                        }`}>
+                          {prediction.verdict}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   
-                  <p className="text-[var(--accent)] font-bold text-sm tracking-wider uppercase mb-4">{prediction.exam_name}</p>
-                  <div className="text-7xl font-black text-[var(--text)] mb-2 tracking-tighter">
-                    {Math.round(prediction.marks)}
-                  </div>
-                  <p className="text-[var(--text-muted)] font-medium">Estimated marks out of {prediction.max_marks}</p>
-                  
-                  <div className="mt-8 w-full bg-[var(--surface-2)] rounded-full h-4 overflow-hidden border border-[var(--border)]">
-                    <div
-                      className={`h-full rounded-full transition-all duration-1000 ${
-                        prediction.percentage >= 60 ? "bg-green-500" :
-                        prediction.percentage >= 40 ? "bg-yellow-500" : "bg-red-500"
-                      }`}
-                      style={{ width: `${Math.min(100, prediction.percentage)}%` }}
-                    />
-                  </div>
-                  <p className="text-sm font-semibold text-[var(--text-muted)] mt-3">Accuracy Match: {prediction.percentage?.toFixed(1)}%</p>
-                </div>
-
-                {/* Status Card */}
-                <div className={`rounded-3xl border p-6 flex items-center gap-4 ${
-                  prediction.passed
-                    ? "bg-green-900/10 border-green-500/30"
-                    : "bg-red-900/10 border-red-500/30"
-                }`}>
-                  <div className={`p-3 rounded-xl ${prediction.passed ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
-                    <Target size={28} />
-                  </div>
-                  <div>
-                    <p className={`text-xl font-bold ${prediction.passed ? "text-green-400" : "text-red-400"}`}>
-                      {prediction.passed ? "Likely to Clear Cutoff" : "Below Expected Cutoff"}
-                    </p>
-                    <p className="text-sm text-[var(--text-muted)] mt-1">
-                      Expected cutoff range: {prediction.cutoff_range[0]}–{prediction.cutoff_range[1]} marks
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                {/* Rank Card */}
-                <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-6 shadow-lg">
-                  <div className="flex items-center gap-3 mb-4">
-                    <TrendingUp className="text-[var(--accent)]" size={24} />
-                    <h3 className="font-bold text-lg text-[var(--text)]">Estimated Rank</h3>
-                  </div>
-                  <p className={`text-5xl font-black mb-2 tracking-tight ${getRankColor(prediction.estimatedRank, prediction.seats)}`}>
-                    #{(prediction.rank || prediction.estimatedRank)?.toLocaleString()}
-                  </p>
-                  <p className="text-sm text-[var(--text-muted)] font-medium">
-                    Out of {prediction.total_candidates.toLocaleString()} competing candidates
-                  </p>
-                </div>
-
-                {/* AI Analysis */}
-                {prediction.analysis && (
-                  <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-6 shadow-lg">
-                    <h3 className="font-bold text-lg text-[var(--text)] mb-3 flex items-center gap-2">
-                      <span className="text-[var(--accent)]">🤖</span> AI Performance DNA
+                  <div className="p-8">
+                    <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+                      <TrendingUp size={20} className="text-yellow-500" /> Analytical Metrics
                     </h3>
-                    <p className="text-[var(--text-muted)] leading-relaxed">{prediction.analysis}</p>
-                  </div>
-                )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                      {prediction.table_data?.map((row, i) => (
+                        <div key={i} className="flex justify-between items-center bg-gray-900/50 p-4 rounded-2xl border border-gray-800">
+                          <span className="text-gray-400 text-sm font-medium">{row.label}</span>
+                          <span className="text-white font-bold">{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
 
-                {/* Suggestions */}
-                {prediction.suggestions && prediction.suggestions.length > 0 && (
-                  <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-6 shadow-lg">
-                    <h3 className="font-bold text-lg text-[var(--text)] mb-4">Action Plan</h3>
-                    <ul className="space-y-3">
-                      {prediction.suggestions.map((s, i) => (
-                        <li key={i} className="flex gap-3 text-[var(--text-muted)]">
-                          <div className="w-6 h-6 rounded-full bg-[var(--surface-2)] text-[var(--accent)] flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
+                    <div className="bg-gray-900/30 rounded-3xl p-6 border border-gray-800/50">
+                      <h4 className="text-gray-300 font-bold text-sm mb-3">AI Case Study</h4>
+                      <p className="text-gray-400 leading-relaxed italic text-sm">"{prediction.analysis}"</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Suggestions Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-gray-950 border border-gray-900 rounded-[2.5rem] p-8 shadow-xl">
+                    <h3 className="text-white font-bold mb-6 flex items-center gap-2">
+                      <Target className="text-red-500" size={24} /> High-Priority Fixes
+                    </h3>
+                    <ul className="space-y-4">
+                      {prediction.suggestions?.map((s, i) => (
+                        <li key={i} className="flex gap-4">
+                          <div className="w-8 h-8 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center shrink-0 font-black text-sm">
                             {i + 1}
                           </div>
-                          <span className="leading-relaxed">{s}</span>
+                          <span className="text-gray-400 text-sm leading-relaxed">{s}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
-                )}
+
+                  <div className="bg-gray-950 border border-gray-900 rounded-[2.5rem] p-8 shadow-xl border-l-4 border-l-yellow-500">
+                    <h3 className="text-white font-bold mb-4">Immediate Strategy</h3>
+                    <p className="text-gray-400 text-sm leading-relaxed mb-6">
+                      {prediction.next_steps}
+                    </p>
+                    <button 
+                      onClick={() => window.location.href='/dna'}
+                      className="w-full py-4 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2"
+                    >
+                      View Failure DNA
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sidebar: Rank & Percentile */}
+              <div className="space-y-8">
+                <div className="bg-gray-950 border border-gray-900 rounded-[2.5rem] p-10 text-center relative overflow-hidden shadow-2xl group border-t-4 border-t-yellow-500">
+                  <div className="absolute top-0 left-0 w-full h-full bg-yellow-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                  <p className="text-gray-500 font-bold text-xs uppercase tracking-widest mb-4">Estimated All India Rank</p>
+                  <div className={`text-7xl font-black mb-4 tracking-tighter ${getRankColor(prediction.estimatedRank, prediction.seats)}`}>
+                    #{prediction.estimatedRank?.toLocaleString()}
+                  </div>
+                  <div className="inline-block px-4 py-2 bg-gray-900 rounded-2xl border border-gray-800 text-gray-300 text-xs font-bold">
+                    TOP {((prediction.estimatedRank / prediction.total_candidates) * 100).toFixed(2)}% of aspirants
+                  </div>
+                  
+                  <div className="mt-10 pt-10 border-t border-gray-900 space-y-6">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 text-sm font-bold">Total Candidates</span>
+                      <span className="text-white font-black">{prediction.total_candidates?.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 text-sm font-bold">Available Seats</span>
+                      <span className="text-white font-black">{prediction.seats?.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 text-sm font-bold">Accuracy</span>
+                      <span className="text-yellow-500 font-black">{prediction.percentage?.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`rounded-[2.5rem] border p-8 ${
+                  prediction.passed ? "bg-green-950/20 border-green-500/30" : "bg-red-950/20 border-red-500/30"
+                }`}>
+                  <h4 className={`font-bold mb-2 ${prediction.passed ? "text-green-400" : "text-red-400"}`}>
+                    {prediction.passed ? "Selection Probability: High" : "Selection Probability: Low"}
+                  </h4>
+                  <p className="text-xs text-gray-400 leading-relaxed">
+                    Based on current performance trends and historically expected cutoffs. Continuous practice required to maintain rank.
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -263,4 +292,4 @@ export default function RankPredictorPage() {
       </div>
     </AppShell>
   );
-}
+}

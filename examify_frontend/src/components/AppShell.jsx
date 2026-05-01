@@ -6,17 +6,16 @@ import { Home, BarChart2, User, BookOpen, FileText, Calendar, ClipboardList, Ref
 
 const NAV_ITEMS = [
   { label: "Home", href: "/home", icon: <Home size={20} /> },
-  { label: "Stats", href: "/dashboard", icon: <BarChart2 size={20} /> },
-  { label: "Profile", href: "/profile", icon: <User size={20} /> },
+  { label: "Analytics", href: "/dashboard", icon: <BarChart2 size={20} /> },
   { label: "Syllabus", href: "/syllabus", icon: <BookOpen size={20} /> },
-  { label: "Notes", href: "/notes", icon: <FileText size={20} /> },
-  { label: "Plan", href: "/study-plan", icon: <Calendar size={20} /> },
-  { label: "Mock Test", href: "/mock-test", icon: <ClipboardList size={20} /> },
-  { label: "Revision", href: "/revision", icon: <RefreshCw size={20} /> },
-  { label: "DNA", href: "/dna-report", icon: <Dna size={20} /> },
-  { label: "AI Chat", href: "/ai-chat", icon: <Bot size={20} /> },
-  { label: "Rank", href: "/rank-predictor", icon: <Trophy size={20} /> },
+  { label: "Smart Notes", href: "/notes", icon: <FileText size={20} /> },
+  { label: "Study Map", href: "/study-plan", icon: <Calendar size={20} /> },
+  { label: "Live Exam", href: "/mock-test", icon: <ClipboardList size={20} /> },
+  { label: "DNA Report", href: "/dna-report", icon: <Dna size={20} /> },
+  { label: "AI Mentor", href: "/ai-chat", icon: <Bot size={20} /> },
+  { label: "Profile", href: "/profile", icon: <User size={20} /> },
 ];
+
 
 export default function AppShell({ children, activePath }) {
   const { dark, toggle } = useTheme();

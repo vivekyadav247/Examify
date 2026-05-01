@@ -1,254 +1,173 @@
 import React, { useState, useEffect } from "react";
-import { Calendar, Edit2, Frown, BarChart2, Activity, AlertTriangle, Bot, HelpCircle, Dna, Clock, Puzzle, Target, Brain } from "lucide-react";
 import { useApiClient } from "../lib/useApiClient";
 import AppShell from "../components/AppShell";
-import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from "recharts";
+import { 
+  Radar, RadarChart, PolarGrid, PolarAngleAxis, 
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip 
+} from "recharts";
+import { Dna, Shield, Zap, Clock, Search, AlertCircle } from "lucide-react";
 
-
-
-const DNA_LABELS = {
-  conceptual: { label: "Conceptual", color: "#818cf8", icon: <Puzzle size={24} />, desc: "Wrong because of wrong concept" },
-  silly: { label: "Silly Mistakes", color: "#f59e0b", icon: <Frown size={24} />, desc: "Knew it but made errors" },
-  time: { label: "Time Pressure", color: "#34d399", icon: <Clock size={24} />, desc: "Ran out of time" },
-  recall: { label: "Recall Failure", color: "#f87171", icon: <Brain size={24} />, desc: "Forgot the content" },
+const DNA_METRICS = {
+  conceptual: { label: "Conceptual Foundation", icon: <Shield size={20} />, color: "text-blue-400", desc: "Understanding of core theories and logic." },
+  silly: { label: "Execution Precision", icon: <Zap size={20} />, color: "text-yellow-400", desc: "Avoidance of minor mistakes and calculation errors." },
+  time: { label: "Pressure Management", icon: <Clock size={20} />, color: "text-red-400", desc: "Performance efficiency under strict time constraints." },
+  recall: { label: "Information Retrieval", icon: <Search size={20} />, color: "text-purple-400", desc: "Ability to remember specific facts and formulas." },
 };
 
 export default function DNAReportPage() {
   const { apiFetch } = useApiClient();
-  const [report, setReport] = useState(null);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [sessions, setSessions] = useState([]);
-  const [activeSession, setActiveSession] = useState(null);
 
   useEffect(() => {
-    fetchReport();
-  }, []);
-
-  const fetchReport = async () => {
-    setLoading(true);
-    try {
-      const res = await apiFetch(`/api/analytics/dna-full/`);
-      const data = await res.json();
-      setReport(data);
-      setSessions(data.sessions || []);
-      if (data.sessions?.length > 0) setActiveSession(data.sessions[0].id);
-    } catch {
-      setReport({ error: "Could not load DNA report." });
+    async function loadDNA() {
+      setLoading(true);
+      try {
+        const res = await apiFetch("/api/analytics/dna-full/");
+        if (res.ok) {
+          const d = await res.json();
+          setData(d);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+      setLoading(false);
     }
-    setLoading(false);
-  };
+    loadDNA();
+  }, [apiFetch]);
 
   if (loading) {
     return (
-    <AppShell activePath={window.location.pathname}>
-      <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-400">Analyzing your failure DNA...</p>
+      <AppShell activePath="/dna-report">
+        <div className="min-h-screen bg-[var(--bg)] flex flex-col items-center justify-center">
+          <div className="w-16 h-16 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+          <h2 className="text-2xl font-black text-white">Sequencing Your DNA...</h2>
         </div>
-      </div>
-    </AppShell>
-    );
-  }
-
-  if (report?.error) {
-    return (
-      <AppShell activePath={window.location.pathname}>
-        <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-400 text-lg">{report.error}</p>
-          <p className="text-gray-500 text-sm mt-2">Make sure backend is running and you have completed some quizzes.</p>
-        </div>
-      </div>
       </AppShell>
     );
   }
 
-  const dnaData = report?.overall_dna || { conceptual: 35, silly: 25, time: 20, recall: 20 };
-  const radarData = Object.entries(dnaData).map(([k, v]) => ({
-    subject: DNA_LABELS[k]?.label || k,
-    value: v,
-  }));
-  const barData = report?.topic_wise || [];
+  const radarData = data ? Object.entries(data.overall_dna).map(([key, value]) => ({
+    subject: DNA_METRICS[key]?.label || key,
+    value: value,
+    fullMark: 100,
+  })) : [];
 
   return (
-    <AppShell activePath={window.location.pathname}>
-      <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold flex items-center gap-3 mb-2">
-            <Dna className="text-[var(--accent)]" size={32} /> Failure DNA Report
-          </h1>
-          <p className="text-gray-400">Deep analysis of why you're losing marks</p>
-        </div>
-
-        {/* DNA Breakdown Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {Object.entries(dnaData).map(([key, value]) => {
-            const meta = DNA_LABELS[key] || { label: key, color: "#6b7280", icon: <HelpCircle size={24} />, desc: "" };
-            return (
-              <div key={key} className="bg-gray-900 border border-gray-700 rounded-2xl p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="flex items-center justify-center p-2 rounded-lg bg-[var(--surface-2)] border border-[var(--border)]" style={{color: meta.color}}>{meta.icon}</span>
-                  <span className="text-sm font-semibold text-gray-300">{meta.label}</span>
-                </div>
-                <div className="text-4xl font-black" style={{ color: meta.color }}>{value}%</div>
-                <div className="mt-2 w-full bg-gray-700 rounded-full h-2">
-                  <div className="h-2 rounded-full" style={{ width: `${value}%`, backgroundColor: meta.color }} />
-                </div>
-                <p className="text-xs text-gray-500 mt-2">{meta.desc}</p>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {/* Radar Chart */}
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5">
-            <h3 className="font-semibold text-white mb-4">DNA Radar</h3>
-            <ResponsiveContainer width="100%" height={240}>
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="#374151" />
-                <PolarAngleAxis dataKey="subject" tick={{ fill: "#9ca3af", fontSize: 12 }} />
-                <Radar name="DNA" dataKey="value" stroke="#818cf8" fill="#818cf8" fillOpacity={0.3} />
-              </RadarChart>
-            </ResponsiveContainer>
+    <AppShell activePath="/dna-report">
+      <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6 lg:p-12 font-sans">
+        <div className="max-w-6xl mx-auto">
+          <div className="mb-12">
+            <h1 className="text-5xl font-black mb-3 tracking-tight flex items-center gap-4">
+              <Dna className="text-yellow-500" size={48} /> Failure DNA Report
+            </h1>
+            <p className="text-gray-400 font-medium text-lg">AI Diagnostic of your exam-taking behavior</p>
           </div>
 
-          {/* Stats */}
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 space-y-4">
-            <h3 className="font-semibold text-white mb-2">Overall Stats</h3>
-            {[
-              { label: "Total Sessions", value: report?.total_sessions || 0, icon: <Calendar size={16} /> },
-              { label: "Questions Attempted", value: report?.total_questions || 0, icon: <Edit2 size={16} /> },
-              { label: "Accuracy", value: `${report?.accuracy || 0}%`, icon: <Target size={16} /> },
-              { label: "Avg Session Score", value: report?.avg_score || 0, icon: <BarChart2 size={16} /> },
-              { label: "Strongest Topic", value: report?.strongest_topic || "–", icon: <Activity size={16} /> },
-              { label: "Weakest Topic", value: report?.weakest_topic || "–", icon: <AlertTriangle size={16} /> },
-            ].map((stat) => (
-              <div key={stat.label} className="flex items-center justify-between">
-                <span className="text-sm text-gray-400 flex gap-2 items-center">
-                  <span>{stat.icon}</span>{stat.label}
-                </span>
-                <span className="text-sm font-semibold text-white">{stat.value}</span>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+            {/* Radar Analysis */}
+            <div className="lg:col-span-2 bg-gray-950 border border-gray-900 rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/5 rounded-full blur-3xl -mr-20 -mt-20"></div>
+               <h3 className="text-xl font-bold text-white mb-8">Performance Blueprint</h3>
+               <div className="h-[400px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
+                    <PolarGrid stroke="#1f2937" />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: "#6b7280", fontSize: 10, fontWeight: "bold" }} />
+                    <Radar
+                      name="Accuracy"
+                      dataKey="value"
+                      stroke="#eab308"
+                      fill="#eab308"
+                      fillOpacity={0.4}
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+               </div>
+            </div>
+
+            {/* Diagnostic Summary */}
+            <div className="bg-yellow-500 text-black rounded-[2.5rem] p-10 shadow-[0_0_50px_rgba(234,179,8,0.2)] flex flex-col">
+              <h3 className="text-2xl font-black mb-6">Expert Verdict</h3>
+              <div className="bg-black/10 rounded-2xl p-6 mb-8 border border-black/5">
+                <p className="text-sm font-bold leading-relaxed">
+                  {data?.simple_report?.headline || "Your performance shows high conceptual strength but needs better time management."}
+                </p>
+              </div>
+              
+              <div className="space-y-6 flex-1">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-2">Primary Weakness</p>
+                  <p className="font-bold text-lg">{data?.simple_report?.weakness || "Time Pressure"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-2">Critical Action Item</p>
+                  <p className="font-bold text-lg">{data?.simple_report?.action || "Attempt 10 timed quizzes this week."}</p>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => window.location.href='/ai-chat'}
+                className="w-full py-4 bg-black text-white font-black rounded-2xl mt-8 transition-transform hover:scale-105"
+              >
+                Discuss with Mentor
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            {Object.entries(DNA_METRICS).map(([key, meta]) => (
+              <div key={key} className="bg-gray-950 border border-gray-900 rounded-[2rem] p-8 shadow-xl">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-6 bg-gray-900 border border-gray-800 ${meta.color}`}>
+                  {meta.icon}
+                </div>
+                <h4 className="text-white font-bold mb-2">{meta.label}</h4>
+                <div className="flex items-end gap-2 mb-4">
+                  <span className="text-3xl font-black text-white">{data?.overall_dna?.[key] || 0}%</span>
+                  <span className="text-gray-600 text-xs font-bold uppercase mb-1">Impact</span>
+                </div>
+                <p className="text-xs text-gray-500 leading-relaxed">{meta.desc}</p>
               </div>
             ))}
           </div>
-        </div>
 
-        {/* Topic-wise Bar */}
-        {barData.length > 0 && (
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 mb-8">
-            <h3 className="font-semibold text-white mb-4">Topic-wise Accuracy</h3>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={barData} margin={{ bottom: 20 }}>
-                <XAxis dataKey="topic" tick={{ fill: "#9ca3af", fontSize: 10 }} angle={-20} textAnchor="end" />
-                <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} domain={[0, 100]} />
-                <Tooltip contentStyle={{ background: "#1f2937", border: "1px solid #374151", color: "#fff" }} />
-                <Bar dataKey="accuracy" radius={[4, 4, 0, 0]}>
-                  {barData.map((entry, i) => (
-                    <Cell
-                      key={i}
-                      fill={entry.accuracy >= 70 ? "#34d399" : entry.accuracy >= 40 ? "#f59e0b" : "#f87171"}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {/* Strengths & Weaknesses Detailed View */}
-        {barData.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div className="bg-green-900/10 border border-green-500/30 rounded-3xl p-6 shadow-lg relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-              <h3 className="font-bold text-xl text-green-400 mb-4 flex items-center gap-2">
-                <Target size={24} /> Top Strengths
-              </h3>
-              <ul className="space-y-4">
-                {barData.filter(d => d.accuracy >= 70).slice(0, 3).map((item, i) => (
-                  <li key={i} className="flex justify-between items-center bg-gray-950/40 p-3 rounded-xl border border-green-900/50">
-                    <span className="font-semibold text-gray-200 text-sm">{item.topic}</span>
-                    <span className="text-green-400 font-bold bg-green-900/30 px-2 py-1 rounded-lg text-xs">{item.accuracy}% Accuracy</span>
-                  </li>
-                ))}
-                {barData.filter(d => d.accuracy >= 70).length === 0 && (
-                  <li className="text-gray-500 text-sm">Keep practicing to build your strengths!</li>
-                )}
-              </ul>
-            </div>
-
-            <div className="bg-red-900/10 border border-red-500/30 rounded-3xl p-6 shadow-lg relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-              <h3 className="font-bold text-xl text-red-400 mb-4 flex items-center gap-2">
-                <AlertTriangle size={24} /> Priority Improvement Areas
-              </h3>
-              <ul className="space-y-4">
-                {barData.filter(d => d.accuracy < 50).slice(-3).reverse().map((item, i) => (
-                  <li key={i} className="flex justify-between items-center bg-gray-950/40 p-3 rounded-xl border border-red-900/50">
-                    <span className="font-semibold text-gray-200 text-sm">{item.topic}</span>
-                    <span className="text-red-400 font-bold bg-red-900/30 px-2 py-1 rounded-lg text-xs">{item.accuracy}% Accuracy</span>
-                  </li>
-                ))}
-                {barData.filter(d => d.accuracy < 50).length === 0 && (
-                  <li className="text-gray-500 text-sm">Great job! No major critical weaknesses found.</li>
-                )}
-              </ul>
-            </div>
-          </div>
-        )}
-
-        {/* AI Recommendations */}
-        {report?.recommendations && (
-          <div className="bg-gradient-to-r from-indigo-900/40 to-purple-900/40 border border-indigo-700 rounded-2xl p-6">
-            <h3 className="font-bold text-white mb-4 flex items-center gap-2">
-              <Bot size={24} className="text-indigo-400" /> AI Recommendations
-            </h3>
-            <div className="space-y-3">
-              {report.recommendations.map((rec, i) => (
-                <div key={i} className="flex gap-3 items-start">
-                  <span className="text-indigo-400 font-bold shrink-0">{i + 1}.</span>
-                  <p className="text-gray-200 text-sm">{rec}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Session History */}
-        {sessions.length > 0 && (
-          <div className="mt-8">
-            <h3 className="font-semibold text-white mb-4">Session History</h3>
-            <div className="space-y-2">
-              {sessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="bg-gray-900 border border-gray-700 rounded-xl p-4 flex items-center justify-between hover:border-indigo-500 transition-colors cursor-pointer"
-                  onClick={() => setActiveSession(session.id === activeSession ? null : session.id)}
-                >
-                  <div>
-                    <p className="text-sm font-medium text-white">{session.subject} · {session.exam}</p>
-                    <p className="text-xs text-gray-500">{session.date} · {session.questions} questions</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-bold text-indigo-400">{session.score}%</p>
-                    <div className="flex gap-1">
-                      {Object.entries(session.dna || {}).slice(0, 3).map(([k, v]) => (
-                        <span key={k} className="text-xs bg-gray-800 px-1.5 py-0.5 rounded text-gray-400">
-                          {DNA_LABELS[k]?.icon} {v}%
-                        </span>
-                      ))}
+          {/* Session History */}
+          <div className="bg-gray-950 border border-gray-900 rounded-[2.5rem] p-10 shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-8">Clinical Session History</h3>
+            <div className="space-y-4">
+              {data?.sessions?.map((session, i) => (
+                <div key={i} className="flex items-center justify-between p-6 bg-gray-900/50 rounded-2xl border border-gray-800 hover:border-gray-600 transition-all">
+                  <div className="flex items-center gap-6">
+                    <div className="w-12 h-12 bg-black rounded-xl flex items-center justify-center font-black text-yellow-500 border border-gray-800">
+                      {session.score}%
+                    </div>
+                    <div>
+                      <p className="text-white font-bold">{session.exam || "Mock Test"}</p>
+                      <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{session.date}</p>
                     </div>
                   </div>
+                  <div className="hidden md:flex gap-2">
+                    {Object.entries(session.dna || {}).map(([key, val]) => (
+                      <div key={key} className="px-3 py-1 bg-gray-800 rounded-lg text-[10px] font-black text-gray-400 uppercase">
+                        {key}: {val}%
+                      </div>
+                    ))}
+                  </div>
+                  <button className="text-xs font-black text-yellow-500 hover:text-yellow-400 uppercase tracking-widest">
+                    Details
+                  </button>
                 </div>
               ))}
+              {(!data?.sessions || data.sessions.length === 0) && (
+                 <div className="text-center py-20 bg-gray-900/20 rounded-[2rem] border border-dashed border-gray-800">
+                    <AlertCircle size={48} className="text-gray-700 mx-auto mb-4" />
+                    <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">No sequence data available yet</p>
+                 </div>
+              )}
             </div>
           </div>
-        )}
+        </div>
       </div>
-    </div>
     </AppShell>
   );
 }

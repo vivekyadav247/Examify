@@ -53,7 +53,7 @@ export default function NotesPage() {
     loadUser();
   }, [apiFetch]);
 
-  const generate = async () => {
+  const generate = async (isRevision = false) => {
     const finalTopic = customTopic || topic;
     if (!finalTopic) return;
     setLoading(true);
@@ -62,7 +62,12 @@ export default function NotesPage() {
       const res = await apiFetch(`/api/notes/generate/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ exam, topic: finalTopic, note_type: noteType }),
+        body: JSON.stringify({ 
+          exam, 
+          topic: finalTopic, 
+          note_type: isRevision ? "quick" : noteType,
+          is_revision: isRevision 
+        }),
       });
       const data = await res.json();
       setNotes(data);
@@ -83,84 +88,91 @@ export default function NotesPage() {
 
   return (
     <AppShell activePath={window.location.pathname}>
-      <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold flex items-center gap-3 mb-2">
-            <FileText className="text-[var(--accent)]" size={32} /> Short Notes Generator
-          </h1>
-          <p className="text-[var(--text-muted)]">AI-generated notes tailored to your exam</p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Controls */}
-          <div className="space-y-5">
-            {/* Exam Select */}
+      <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6 lg:p-12 font-sans">
+        <div className="max-w-6xl mx-auto">
+          <div className="mb-12 flex justify-between items-end">
             <div>
-              <label className="block text-sm font-semibold text-[var(--text-muted)] mb-2 uppercase tracking-wider">Target Exam</label>
-              <div className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-xl px-4 py-3 text-[var(--text)] opacity-80 cursor-not-allowed">
-                {userExamTarget || "Loading..."}
-              </div>
+              <h1 className="text-5xl font-black mb-3 tracking-tight">Smart Study Notes</h1>
+              <p className="text-gray-400 font-medium text-lg">AI-distilled knowledge for {userExamTarget}</p>
             </div>
-
-            {/* Topic */}
-            <div>
-              <label className="block text-sm font-semibold text-[var(--text-muted)] mb-2 uppercase tracking-wider">Topic</label>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {(TOPICS_BY_EXAM[exam] || []).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => { setTopic(t); setCustomTopic(""); }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      topic === t ? "bg-[var(--accent)] text-[var(--bg)] text-[var(--text)]" : "bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-gray-700"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-              <input
-                className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-xl px-4 py-3 text-[var(--text)] placeholder-gray-500 focus:outline-none focus:border-[var(--accent)]"
-                placeholder="Or type any topic..."
-                value={customTopic}
-                onChange={(e) => { setCustomTopic(e.target.value); setTopic(""); }}
-              />
+            <div className="flex gap-4">
+              <button 
+                onClick={() => generate(true)}
+                className="bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-yellow-500 hover:text-black transition-all"
+              >
+                Fast Revision ⚡
+              </button>
             </div>
-
-            {/* Note Type */}
-            <div>
-              <label className="block text-sm font-semibold text-[var(--text-muted)] mb-2 uppercase tracking-wider">Note Style</label>
-              <div className="space-y-2">
-                {NOTE_TYPES.map((nt) => (
-                  <button
-                    key={nt.id}
-                    onClick={() => setNoteType(nt.id)}
-                    className={`w-full text-left p-3 rounded-xl border transition-all ${
-                      noteType === nt.id
-                        ? "bg-indigo-900/50 border-[var(--accent)] text-[var(--text)]"
-                        : "bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-muted)] hover:border-gray-600"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">{nt.icon}</span>
-                      <div>
-                        <div className="text-sm font-semibold">{nt.label}</div>
-                        <div className="text-xs text-[var(--text-muted)]">{nt.desc}</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <button
-              onClick={generate}
-              disabled={loading || (!topic && !customTopic)}
-              className="w-full bg-[var(--accent)] text-[var(--bg)] hover:bg-[var(--accent-2)] text-[var(--bg)] disabled:bg-gray-700 disabled:text-[var(--text-muted)] text-[var(--text)] font-semibold py-3 rounded-xl transition-colors"
-            >
-              {loading ? "Generating..." : "✨ Generate Notes"}
-            </button>
           </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+            {/* Controls */}
+            <div className="space-y-8">
+              <div className="bg-gray-950 border border-gray-900 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 rounded-full blur-3xl -mr-10 -mt-10"></div>
+                
+                <div className="space-y-8 relative">
+                  {/* Topic Section */}
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-600 mb-4 uppercase tracking-[0.2em]">Select Exam Topic</label>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {(TOPICS_BY_EXAM[exam] || []).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => { setTopic(t); setCustomTopic(""); }}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+                            topic === t ? "bg-yellow-500 border-yellow-500 text-black scale-105" : "bg-gray-900 border-gray-800 text-gray-500 hover:border-gray-600"
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      className="w-full bg-gray-900 border border-gray-800 rounded-2xl px-5 py-4 text-white placeholder-gray-600 focus:outline-none focus:border-yellow-500 transition-all font-medium"
+                      placeholder="Or specify a custom sub-topic..."
+                      value={customTopic}
+                      onChange={(e) => { setCustomTopic(e.target.value); setTopic(""); }}
+                    />
+                  </div>
+
+                  {/* Note Style */}
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-600 mb-4 uppercase tracking-[0.2em]">Learning Style</label>
+                    <div className="grid grid-cols-1 gap-3">
+                      {NOTE_TYPES.map((nt) => (
+                        <button
+                          key={nt.id}
+                          onClick={() => setNoteType(nt.id)}
+                          className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${
+                            noteType === nt.id
+                              ? "bg-yellow-500/10 border-yellow-500 text-white"
+                              : "bg-gray-900 border-gray-800 text-gray-500 hover:border-gray-600"
+                          }`}
+                        >
+                          <span className={`w-10 h-10 rounded-xl flex items-center justify-center ${noteType === nt.id ? "bg-yellow-500 text-black" : "bg-gray-800 text-gray-600"}`}>
+                            {nt.icon}
+                          </span>
+                          <div className="text-left">
+                            <div className="text-sm font-bold">{nt.label}</div>
+                            <div className="text-[10px] font-medium opacity-60">{nt.desc}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => generate(false)}
+                    disabled={loading || (!topic && !customTopic)}
+                    className="w-full bg-yellow-500 text-black hover:bg-yellow-400 disabled:bg-gray-800 disabled:text-gray-500 font-black py-5 rounded-2xl text-lg transition-all shadow-[0_0_30px_rgba(234,179,8,0.1)]"
+                  >
+                    {loading ? "Distilling..." : "Generate Master Notes"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
 
           {/* Notes Output */}
           <div className="lg:col-span-2 space-y-4">

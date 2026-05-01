@@ -93,12 +93,17 @@ export default function AIChatPage() {
       const res = await apiFetch(`/api/chat/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ exam, message: text, history: messages }),
+        body: JSON.stringify({ 
+          exam, 
+          message: text, 
+          history: messages,
+          system_override: "You are a top-tier Indian exam mentor. Explain everything in simple Hinglish. Be encouraging but direct. Use bullet points for complex topics."
+        }),
       });
       const data = await res.json();
-      setMessages((m) => [...m, { role: "assistant", content: data.reply || "I couldn't respond right now." }]);
+      setMessages((m) => [...m, { role: "assistant", content: data.reply || "I'm having trouble connecting to my brain. Try again?" }]);
     } catch {
-      setMessages((m) => [...m, { role: "assistant", content: "Connection error. Check if backend is running." }]);
+      setMessages((m) => [...m, { role: "assistant", content: "Signal lost. Let me reconnect." }]);
     }
     setLoading(false);
   };
@@ -107,104 +112,117 @@ export default function AIChatPage() {
 
   return (
     <AppShell activePath={window.location.pathname}>
-      <div className="h-[calc(100vh-60px)] md:h-screen flex flex-col bg-[var(--bg)] text-[var(--text)]">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] bg-[var(--surface)] shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="flex items-center justify-center p-2 bg-[var(--surface-2)] rounded-xl border border-[var(--border)]">{persona.icon}</span>
-          <div>
-            <h1 className={`font-bold text-lg ${persona.color}`}>{persona.name}</h1>
-            <p className="text-xs text-[var(--text-muted)]">{userExamTarget} Assistant</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={clearChat} className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors border border-[var(--border)] px-3 py-2 rounded-xl">
-            Clear
-          </button>
-        </div>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="max-w-2xl mx-auto">
-            <div className="text-center mb-8 mt-8">
-              <span className="flex items-center justify-center mx-auto w-20 h-20 bg-[var(--surface-2)] rounded-2xl border border-[var(--border)] text-[var(--accent)]">{persona.icon}</span>
-              <h2 className={`text-2xl font-bold mt-3 mb-1 ${persona.color}`}>
-                Hi! I'm your {persona.name}
-              </h2>
-              <p className="text-[var(--text-muted)] text-sm">{persona.hint}</p>
+      <div className="h-[calc(100vh-64px)] md:h-screen flex flex-col bg-[var(--bg)] font-sans">
+        {/* Header */}
+        <div className="flex items-center justify-between px-8 py-6 border-b border-gray-900 bg-black shrink-0 shadow-2xl">
+          <div className="flex items-center gap-4">
+            <div className={`p-3 rounded-2xl bg-gray-950 border border-gray-900 ${persona.color}`}>
+              {persona.icon}
             </div>
-            <p className="text-xs text-gray-600 uppercase tracking-widest text-center mb-3">Quick Prompts</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {(QUICK_PROMPTS[exam] || []).map((q, i) => (
-                <button
-                  key={i}
-                  onClick={() => send(q)}
-                  className="text-left text-sm p-3 bg-[var(--surface-2)] hover:bg-gray-700 border border-[var(--border)] hover:border-[var(--accent)] rounded-xl text-gray-300 transition-all"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div
-              className={`max-w-2xl px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                msg.role === "user"
-                  ? "bg-[var(--accent)] text-[var(--bg)] text-[var(--text)] rounded-br-sm"
-                  : "bg-[var(--surface-2)] border border-[var(--border)] text-gray-200 rounded-bl-sm"
-              }`}
-              style={{ whiteSpace: "pre-wrap" }}
-            >
-              {msg.role === "assistant" && (
-                <span className="text-xs font-semibold opacity-60 block mb-1">{persona.icon} {persona.name}</span>
-              )}
-              <span dangerouslySetInnerHTML={{ __html: msg.content.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br/>") }} />
-            </div>
-          </div>
-        ))}
-
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl rounded-bl-sm px-4 py-3">
-              <div className="flex gap-1 items-center">
-                <span className="text-xs text-[var(--text-muted)] mr-2">{persona.name} is thinking</span>
-                <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+            <div>
+              <h1 className="font-black text-xl text-white tracking-tight">{persona.name}</h1>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Active Mentorship</p>
               </div>
             </div>
           </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <div className="px-4 py-4 border-t border-[var(--border)] bg-[var(--surface)] shrink-0">
-        <div className="max-w-3xl mx-auto flex gap-3">
-          <textarea
-            rows={1}
-            className="flex-1 bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl px-4 py-3 text-[var(--text)] placeholder-gray-500 focus:outline-none focus:border-[var(--accent)] resize-none text-sm"
-            placeholder={`Ask your ${persona.name} anything...`}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          />
-          <button
-            onClick={() => send()}
-            disabled={loading || !input.trim()}
-            className="bg-[var(--accent)] text-[var(--bg)] hover:bg-[var(--accent-2)] text-[var(--bg)] disabled:bg-gray-700 text-[var(--text)] px-5 py-3 rounded-2xl font-medium transition-colors shrink-0"
-          >
-            Send
+          <button onClick={clearChat} className="px-4 py-2 border border-gray-800 rounded-xl text-xs font-bold text-gray-500 hover:text-white transition-all">
+            Reset Session
           </button>
         </div>
-        <p className="text-center text-xs text-gray-700 mt-2">Press Enter to send · Shift+Enter for new line</p>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-6 py-10 space-y-8 scroll-smooth custom-scrollbar">
+          {messages.length === 0 && (
+            <div className="max-w-2xl mx-auto py-10 text-center">
+              <div className="mb-10 relative inline-block">
+                <div className="w-24 h-24 bg-yellow-500/10 rounded-3xl flex items-center justify-center border border-yellow-500/20 mx-auto">
+                   {persona.icon}
+                </div>
+                <div className="absolute -bottom-2 -right-2 bg-yellow-500 text-black px-3 py-1 rounded-full text-[10px] font-black uppercase">PRO</div>
+              </div>
+              <h2 className="text-4xl font-black text-white mb-3 tracking-tight">
+                Namaste! I'm your {persona.name}
+              </h2>
+              <p className="text-gray-500 font-medium mb-12">How can I help you dominate {userExamTarget} today?</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(QUICK_PROMPTS[exam] || []).map((q, i) => (
+                  <button
+                    key={i}
+                    onClick={() => send(q)}
+                    className="text-left p-6 bg-gray-950 border border-gray-900 rounded-[1.5rem] hover:border-yellow-500/30 hover:bg-gray-900/50 transition-all group"
+                  >
+                    <p className="text-sm font-bold text-gray-300 group-hover:text-white">{q}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div
+                className={`max-w-2xl px-6 py-4 rounded-[1.5rem] text-sm leading-relaxed shadow-xl ${
+                  msg.role === "user"
+                    ? "bg-yellow-500 text-black font-bold rounded-br-sm"
+                    : "bg-gray-950 border border-gray-900 text-gray-300 rounded-bl-sm"
+                }`}
+              >
+                {msg.role === "assistant" && (
+                  <div className="flex items-center gap-2 mb-3 opacity-50">
+                    <span className="p-1 bg-gray-900 rounded-md">{persona.icon}</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">{persona.name}</span>
+                  </div>
+                )}
+                <div 
+                  className="prose prose-invert prose-sm"
+                  dangerouslySetInnerHTML={{ __html: msg.content.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br/>") }} 
+                />
+              </div>
+            </div>
+          ))}
+
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-gray-950 border border-gray-900 rounded-[1.5rem] rounded-bl-sm px-6 py-4 shadow-xl">
+                <div className="flex gap-2 items-center">
+                  <div className="flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </div>
+                  <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest ml-2">Mentor is typing...</span>
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input Bar */}
+        <div className="p-6 bg-black border-t border-gray-900 shrink-0">
+          <div className="max-w-4xl mx-auto relative">
+            <textarea
+              rows={1}
+              className="w-full bg-gray-950 border border-gray-800 rounded-[1.5rem] px-8 py-5 text-white placeholder-gray-600 focus:outline-none focus:border-yellow-500 transition-all pr-32 resize-none font-medium shadow-2xl"
+              placeholder={`Ask your ${persona.name} anything...`}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+            />
+            <button
+              onClick={() => send()}
+              disabled={loading || !input.trim()}
+              className="absolute right-3 top-3 bottom-3 px-8 bg-yellow-500 text-black hover:bg-yellow-400 disabled:bg-gray-800 disabled:text-gray-500 rounded-2xl font-black text-xs uppercase tracking-widest transition-all"
+            >
+              Ask Mentor
+            </button>
+          </div>
+          <p className="text-center text-[10px] text-gray-600 mt-4 font-bold uppercase tracking-widest">Powered by Examify AI · Precise Hinglish Guidance</p>
+        </div>
       </div>
-    </div>
     </AppShell>
   );
-}
+}
