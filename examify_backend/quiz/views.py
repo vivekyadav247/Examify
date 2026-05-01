@@ -423,7 +423,7 @@ class QuizStartView(APIView):
                 detail = "question_generation_unavailable"
                 message = (
                     "No questions are available yet and AI generation is currently unavailable. "
-                    "Check OpenRouter connectivity/API key and retry."
+                    "Check Groq connectivity/API key and retry."
                 )
                 status_code = status.HTTP_503_SERVICE_UNAVAILABLE
             return Response(
@@ -532,7 +532,7 @@ class DiagnosticStartView(APIView):
                 detail = "diagnostic_generation_unavailable"
                 message = (
                     "No diagnostic questions are available yet and AI generation is currently unavailable. "
-                    "Check OpenRouter connectivity/API key and retry."
+                    "Check Groq connectivity/API key and retry."
                 )
                 status_code = status.HTTP_503_SERVICE_UNAVAILABLE
             return Response(

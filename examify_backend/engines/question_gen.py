@@ -2,16 +2,18 @@ import json
 import logging
 import os
 import re
+import time
 
 import httpx
 import openai
 
 from engines.topic_graph import EXAM_SUBJECTS
 
-DEFAULT_MODEL = "anthropic/claude-3-haiku"
-EXPLANATION_MODEL = "anthropic/claude-3-sonnet"
-DNA_REPORT_MODEL = "anthropic/claude-3-sonnet"
-STUDY_PLAN_MODEL = "anthropic/claude-3-sonnet"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
+FALLBACK_MODEL = "gemma2-9b-it"
+EXPLANATION_MODEL = DEFAULT_MODEL
+DNA_REPORT_MODEL = DEFAULT_MODEL
+STUDY_PLAN_MODEL = DEFAULT_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -24,24 +26,24 @@ def _env_bool(name, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
-def _build_openrouter_client():
-    """Build an OpenAI-compatible client pointed at OpenRouter."""
-    use_system_proxy = _env_bool("OPENROUTER_USE_SYSTEM_PROXY", False)
+def _build_groq_client():
+    """Build an OpenAI-compatible client pointed at Groq."""
+    use_system_proxy = _env_bool("GROQ_USE_SYSTEM_PROXY", False)
     # Increased timeout to 120s to allow live generation of large batches
     http_client = httpx.Client(timeout=httpx.Timeout(120.0, connect=10.0), trust_env=use_system_proxy)
     return openai.OpenAI(
-        base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
-        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url=os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+        api_key=os.environ.get("GROQ_API_KEY"),
         http_client=http_client,
     )
 
 
-client = _build_openrouter_client()
+client = _build_groq_client()
 
 
 def _get_model():
-    """Return the configured OpenRouter model name."""
-    return os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL)
+    """Return the configured Groq model name."""
+    return os.environ.get("GROQ_MODEL", DEFAULT_MODEL)
 
 
 def _truncate_words(text, limit):
@@ -104,19 +106,72 @@ def _extract_json_object(text):
     raise ValueError("Could not parse JSON object")
 
 
-def _call_openrouter(prompt, model, max_tokens=4000, temperature=0.7):
-    """Send a prompt to OpenRouter and return the text response."""
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY is not configured.")
+def _is_rate_limited(exc):
+    status = getattr(exc, "status_code", None)
+    if status == 429:
+        return True
+    message = str(exc).lower()
+    return "rate limit" in message or "rate_limit" in message or "429" in message
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=max_tokens,
-        temperature=temperature,
-    )
-    return (response.choices[0].message.content or "").strip()
+
+def _should_fallback(exc, model):
+    if model != DEFAULT_MODEL:
+        return False
+    status = getattr(exc, "status_code", None)
+    message = str(exc).lower()
+    return status == 429 or "quota" in message
+
+
+def _collect_stream(stream):
+    parts = []
+    for chunk in stream:
+        if not getattr(chunk, "choices", None):
+            continue
+        delta = getattr(chunk.choices[0], "delta", None)
+        text = getattr(delta, "content", None) if delta else None
+        if text:
+            parts.append(text)
+    return "".join(parts).strip()
+
+
+def _call_groq(prompt, model, max_tokens=4000, temperature=0.7, stream=False):
+    """Send a prompt to Groq and return the text response."""
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not configured.")
+
+    def _request(target_model):
+        if stream:
+            stream_resp = client.chat.completions.create(
+                model=target_model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=temperature,
+                stream=True,
+            )
+            return _collect_stream(stream_resp)
+        response = client.chat.completions.create(
+            model=target_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return (response.choices[0].message.content or "").strip()
+
+    try:
+        return _request(model)
+    except Exception as exc:
+        if _is_rate_limited(exc):
+            time.sleep(2)
+            try:
+                return _request(model)
+            except Exception as retry_exc:
+                if _should_fallback(retry_exc, model):
+                    return _request(FALLBACK_MODEL)
+                raise
+        if _should_fallback(exc, model):
+            return _request(FALLBACK_MODEL)
+        raise
 
 
 def _get_question_model(db):
@@ -282,7 +337,7 @@ def generate_question_batch(
 
     data = None
     try:
-        content = _call_openrouter(prompt, _get_model(), max_tokens=6000, temperature=0.6)
+        content = _call_groq(prompt, _get_model(), max_tokens=6000, temperature=0.6, stream=True)
         data = _extract_json_array(content)
         if not isinstance(data, list):
             data = None
@@ -451,7 +506,7 @@ def generate_explanation(
         "end with the correct concept."
     )
 
-    return _call_openrouter(prompt, EXPLANATION_MODEL, max_tokens=300, temperature=0.2)
+    return _call_groq(prompt, EXPLANATION_MODEL, max_tokens=300, temperature=0.2)
 
 
 def generate_daily_plan(exam, user_profiles, days_left):
@@ -537,7 +592,7 @@ def generate_ai_failure_report(
         "4) Avoid markdown, code fences, or extra text."
     )
 
-    raw = _call_openrouter(prompt, DNA_REPORT_MODEL, max_tokens=900, temperature=0.3)
+    raw = _call_groq(prompt, DNA_REPORT_MODEL, max_tokens=900, temperature=0.3)
     obj = _extract_json_object(raw)
     if not isinstance(obj, dict):
         raise ValueError("Invalid AI report payload")
@@ -576,7 +631,7 @@ def generate_ai_study_plan(exam, user_snapshot, performance_snapshot):
         "4) Do not include markdown or extra text."
     )
 
-    raw = _call_openrouter(prompt, STUDY_PLAN_MODEL, max_tokens=1200, temperature=0.25)
+    raw = _call_groq(prompt, STUDY_PLAN_MODEL, max_tokens=1200, temperature=0.25)
     obj = _extract_json_object(raw)
     if not isinstance(obj, dict):
         raise ValueError("Invalid AI study plan payload")

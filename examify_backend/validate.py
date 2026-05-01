@@ -103,12 +103,12 @@ except Exception as e:
 
 # 5. Check AI connectivity
 try:
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if api_key and api_key.startswith("sk-or-"):
-        print(f"\n[AI] [OK] OpenRouter key present: {api_key[:20]}...")
+    api_key = os.environ.get("GROQ_API_KEY", "")
+    if api_key and api_key.startswith("gsk_"):
+        print(f"\n[AI] [OK] Groq key present: {api_key[:20]}...")
     else:
-        print(f"\n[AI] [WARN] OpenRouter key missing or invalid")
-        errors.append("OpenRouter API key not set properly")
+        print(f"\n[AI] [WARN] Groq key missing or invalid")
+        errors.append("Groq API key not set properly")
 except Exception as e:
     errors.append(f"AI check failed: {e}")
 
