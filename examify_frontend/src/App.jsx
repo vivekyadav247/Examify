@@ -11,6 +11,14 @@ import Onboarding from "./pages/Onboarding";
 import Profile from "./pages/Profile";
 import Quiz from "./pages/Quiz";
 import TopicMap from "./pages/TopicMap";
+import SyllabusPage from "./pages/SyllabusPage";
+import NotesPage from "./pages/NotesPage";
+import StudyPlanPage from "./pages/StudyPlanPage";
+import AIChatPage from "./pages/AIChatPage";
+import RankPredictorPage from "./pages/RankPredictorPage";
+import MockTestPage from "./pages/MockTestPage";
+import RevisionPage from "./pages/RevisionPage";
+import DNAReportPage from "./pages/DNAReportPage";
 // Auth Modals are handled in LandingPage
 
 function Protected({ children }) {
@@ -266,6 +274,76 @@ export default function App() {
         element={
           <Protected>
             <AdminPanel />
+          </Protected>
+        }
+      />
+      <Route
+        path="/syllabus"
+        element={
+          <Protected>
+            <SetupRequired>
+              <SyllabusPage />
+            </SetupRequired>
+          </Protected>
+        }
+      />
+      <Route
+        path="/notes"
+        element={
+          <Protected>
+            <SetupRequired>
+              <NotesPage />
+            </SetupRequired>
+          </Protected>
+        }
+      />
+      <Route
+        path="/study-plan"
+        element={
+          <Protected>
+            <SetupRequired>
+              <StudyPlanPage />
+            </SetupRequired>
+          </Protected>
+        }
+      />
+      <Route
+        path="/mock-test"
+        element={
+          <Protected>
+            <SetupRequired>
+              <MockTestPage />
+            </SetupRequired>
+          </Protected>
+        }
+      />
+      <Route
+        path="/revision"
+        element={
+          <Protected>
+            <SetupRequired>
+              <RevisionPage />
+            </SetupRequired>
+          </Protected>
+        }
+      />
+      <Route
+        path="/ai-chat"
+        element={
+          <Protected>
+            <SetupRequired>
+              <AIChatPage />
+            </SetupRequired>
+          </Protected>
+        }
+      />
+      <Route
+        path="/rank-predictor"
+        element={
+          <Protected>
+            <SetupRequired>
+              <RankPredictorPage />
+            </SetupRequired>
           </Protected>
         }
       />

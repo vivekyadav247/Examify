@@ -11,4 +11,5 @@ urlpatterns = [
     path("api/plans/", include("plans.urls")),
     path("api/admin/users/", AdminUserListView.as_view(), name="admin-user-list"),
     path("api/admin/users/update/", AdminUpdateUserView.as_view(), name="admin-user-update"),
+    path("api/", include("features.urls")),
 ]

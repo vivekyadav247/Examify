@@ -2,12 +2,20 @@ import React from "react";
 import { useTheme } from "../lib/ThemeContext";
 import { useApiClient } from "../lib/useApiClient";
 
+import { Home, BarChart2, User, BookOpen, FileText, Calendar, ClipboardList, RefreshCw, Dna, Bot, Trophy, LogOut, Sun, Moon } from "lucide-react";
+
 const NAV_ITEMS = [
-  { label: "Home", href: "/home", icon: "H" },
-  { label: "Stats", href: "/dashboard", icon: "S" },
-  { label: "Profile", href: "/profile", icon: "U" },
-  { label: "Plan", href: "/plan", icon: "P" },
-  { label: "DNA", href: "/dna-report?latest=1", icon: "D" },
+  { label: "Home", href: "/home", icon: <Home size={20} /> },
+  { label: "Stats", href: "/dashboard", icon: <BarChart2 size={20} /> },
+  { label: "Profile", href: "/profile", icon: <User size={20} /> },
+  { label: "Syllabus", href: "/syllabus", icon: <BookOpen size={20} /> },
+  { label: "Notes", href: "/notes", icon: <FileText size={20} /> },
+  { label: "Plan", href: "/study-plan", icon: <Calendar size={20} /> },
+  { label: "Mock Test", href: "/mock-test", icon: <ClipboardList size={20} /> },
+  { label: "Revision", href: "/revision", icon: <RefreshCw size={20} /> },
+  { label: "DNA", href: "/dna-report", icon: <Dna size={20} /> },
+  { label: "AI Chat", href: "/ai-chat", icon: <Bot size={20} /> },
+  { label: "Rank", href: "/rank-predictor", icon: <Trophy size={20} /> },
 ];
 
 export default function AppShell({ children, activePath }) {
@@ -40,7 +48,7 @@ export default function AppShell({ children, activePath }) {
     >
       {/* Desktop Sidebar */}
       <aside
-        className="fixed left-0 top-0 hidden h-screen w-[112px] flex-col items-center justify-between border-r py-5 md:flex"
+        className="fixed left-0 top-0 hidden h-screen w-56 flex-col items-center justify-between border-r py-5 md:flex"
         style={{
           borderColor: "var(--border)",
           backgroundColor: "var(--surface)",
@@ -49,7 +57,7 @@ export default function AppShell({ children, activePath }) {
         <div className="flex w-full flex-col items-center gap-1 px-2">
           <a
             href="/dashboard"
-            className="mb-6 flex h-9 w-9 items-center justify-center rounded-lg font-display text-sm font-bold"
+            className="mb-8 flex h-12 w-12 items-center justify-center rounded-xl font-display text-xl font-bold"
             style={{
               backgroundColor: "var(--accent)",
               color: dark ? "#111" : "#fff",
@@ -68,7 +76,7 @@ export default function AppShell({ children, activePath }) {
                 key={item.href}
                 href={item.href}
                 onClick={(e) => guardNav(e, item.href.split("?")[0])}
-                className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left transition-all hover:scale-105"
+                className="flex w-full items-center gap-3 rounded-xl px-4 py-3 mb-1 text-left transition-all hover:scale-[1.02]"
                 style={{
                   color: active ? "var(--accent)" : "var(--text-muted)",
                   backgroundColor: active
@@ -76,8 +84,8 @@ export default function AppShell({ children, activePath }) {
                     : "transparent",
                 }}
               >
-                <span className="text-base">{item.icon}</span>
-                <span className="text-[11px]">{item.label}</span>
+                <span className="flex items-center justify-center">{item.icon}</span>
+                <span className="text-sm font-medium">{item.label}</span>
               </a>
             );
           })}
@@ -101,7 +109,7 @@ export default function AppShell({ children, activePath }) {
       </aside>
 
       {/* Main Content */}
-      <div className="pb-20 md:pl-[112px] md:pb-0">{children}</div>
+      <div className="pb-20 md:pl-56 md:pb-0">{children}</div>
 
       {/* Mobile Bottom Bar */}
       <nav
@@ -111,7 +119,7 @@ export default function AppShell({ children, activePath }) {
           backgroundColor: "var(--surface)",
         }}
       >
-        <div className="mx-auto flex max-w-lg items-center justify-around py-2">
+        <div className="mx-auto flex max-w-lg items-center justify-start gap-4 overflow-x-auto px-4 py-2 no-scrollbar">
           {NAV_ITEMS.map((item) => {
             const baseHref = item.href.split("?")[0];
             const active =

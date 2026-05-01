@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "analytics",
     "content",
     "plans",
+    "features",
 ]
 
 MIDDLEWARE = [
