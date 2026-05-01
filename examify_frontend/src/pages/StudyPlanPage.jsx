@@ -205,44 +205,54 @@ export default function StudyPlanPage() {
                   ))}
                 </div>
 
-                {/* Week Tabs */}
+                {/* Candy Crush Style Map */}
                 {plan.weeks && (
-                  <div>
-                    <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-                      {plan.weeks.map((week, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setActiveWeek(i)}
-                          className={`shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-                            activeWeek === i ? "bg-[var(--accent)] text-[var(--bg)] text-[var(--text)]" : "bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--text)]"
-                          }`}
-                        >
-                          Week {i + 1}
-                        </button>
-                      ))}
-                    </div>
+                  <div className="relative pl-6 md:pl-10 border-l-4 border-indigo-900/40 ml-4 my-10 space-y-16">
+                    {plan.weeks.map((week, i) => (
+                      <div key={i} className="relative group">
+                        {/* Week Level Node */}
+                        <div className="absolute -left-[45px] md:-left-[61px] top-0 w-12 h-12 rounded-full bg-[var(--bg)] border-4 border-[var(--accent)] shadow-[0_0_20px_var(--accent-glow)] flex items-center justify-center font-bold text-lg text-[var(--text)] z-10 transition-transform group-hover:scale-110">
+                          {i + 1}
+                        </div>
+                        
+                        <div className="bg-[var(--surface)] rounded-3xl border border-[var(--border)] p-6 md:p-8 shadow-xl transition-all group-hover:border-indigo-500/30 group-hover:shadow-[0_0_30px_rgba(79,70,229,0.1)] relative overflow-hidden">
+                          {/* Decorative Background gradient */}
+                          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
 
-                    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--border)] p-5">
-                      <h3 className="font-bold text-[var(--text)] mb-1">{plan.weeks[activeWeek]?.theme}</h3>
-                      <p className="text-sm text-[var(--text-muted)] mb-4">{plan.weeks[activeWeek]?.description}</p>
-                      <div className="space-y-2">
-                        {plan.weeks[activeWeek]?.days?.map((day, j) => (
-                          <div key={j} className="flex gap-3 items-start bg-[var(--surface-2)] rounded-xl p-3">
-                            <div className="shrink-0 w-16 text-xs font-semibold text-[var(--accent)] pt-0.5">{day.day}</div>
-                            <div className="flex-1 flex flex-wrap gap-2">
-                              {day.tasks?.map((task, k) => (
-                                <span
-                                  key={k}
-                                  className={`text-xs px-2 py-1 rounded-lg border ${subjectColors[task.subject] || "bg-gray-700 text-gray-300 border-gray-600"}`}
-                                >
-                                  {task.subject} · {task.duration}
-                                </span>
-                              ))}
-                            </div>
+                          <h3 className="font-bold text-2xl text-[var(--text)] mb-2 flex items-center gap-3">
+                            <span className="text-[var(--accent)]">Level {i + 1}:</span> {week.theme}
+                          </h3>
+                          <p className="text-[var(--text-muted)] mb-8">{week.description}</p>
+                          
+                          <div className="space-y-6 pl-4 border-l-2 border-dashed border-indigo-800/30 relative">
+                            {week.days?.map((day, j) => (
+                              <div key={j} className="relative">
+                                {/* Small day dot */}
+                                <div className="absolute -left-[23px] top-4 w-3 h-3 rounded-full bg-[var(--accent-2)] border-2 border-[var(--bg)] shadow-[0_0_10px_var(--accent-2)]" />
+                                
+                                <div className="flex flex-col lg:flex-row gap-4 items-start bg-[var(--surface-2)]/50 rounded-2xl p-4 border border-[var(--border)] hover:bg-[var(--surface-2)] transition-colors">
+                                  <div className="shrink-0 w-28 text-sm font-bold text-indigo-300 pt-1 uppercase tracking-wider">{day.day}</div>
+                                  <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 w-full">
+                                    {day.tasks?.map((task, k) => (
+                                      <div
+                                        key={k}
+                                        className={`px-4 py-3 rounded-xl border flex flex-col gap-1.5 transition-transform hover:-translate-y-1 ${subjectColors[task.subject] || "bg-gray-800/50 text-gray-200 border-gray-700"}`}
+                                      >
+                                        <div className="flex justify-between items-center">
+                                          <span className="font-bold text-sm opacity-90">{task.subject}</span>
+                                          <span className="text-xs px-2 py-0.5 rounded-full bg-black/20 font-mono">{task.duration}</span>
+                                        </div>
+                                        <span className="text-xs opacity-80 leading-relaxed">{task.activity}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
                 )}
 

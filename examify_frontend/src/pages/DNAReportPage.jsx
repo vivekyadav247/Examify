@@ -159,6 +159,47 @@ export default function DNAReportPage() {
           </div>
         )}
 
+        {/* Strengths & Weaknesses Detailed View */}
+        {barData.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div className="bg-green-900/10 border border-green-500/30 rounded-3xl p-6 shadow-lg relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+              <h3 className="font-bold text-xl text-green-400 mb-4 flex items-center gap-2">
+                <Target size={24} /> Top Strengths
+              </h3>
+              <ul className="space-y-4">
+                {barData.filter(d => d.accuracy >= 70).slice(0, 3).map((item, i) => (
+                  <li key={i} className="flex justify-between items-center bg-gray-950/40 p-3 rounded-xl border border-green-900/50">
+                    <span className="font-semibold text-gray-200 text-sm">{item.topic}</span>
+                    <span className="text-green-400 font-bold bg-green-900/30 px-2 py-1 rounded-lg text-xs">{item.accuracy}% Accuracy</span>
+                  </li>
+                ))}
+                {barData.filter(d => d.accuracy >= 70).length === 0 && (
+                  <li className="text-gray-500 text-sm">Keep practicing to build your strengths!</li>
+                )}
+              </ul>
+            </div>
+
+            <div className="bg-red-900/10 border border-red-500/30 rounded-3xl p-6 shadow-lg relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+              <h3 className="font-bold text-xl text-red-400 mb-4 flex items-center gap-2">
+                <AlertTriangle size={24} /> Priority Improvement Areas
+              </h3>
+              <ul className="space-y-4">
+                {barData.filter(d => d.accuracy < 50).slice(-3).reverse().map((item, i) => (
+                  <li key={i} className="flex justify-between items-center bg-gray-950/40 p-3 rounded-xl border border-red-900/50">
+                    <span className="font-semibold text-gray-200 text-sm">{item.topic}</span>
+                    <span className="text-red-400 font-bold bg-red-900/30 px-2 py-1 rounded-lg text-xs">{item.accuracy}% Accuracy</span>
+                  </li>
+                ))}
+                {barData.filter(d => d.accuracy < 50).length === 0 && (
+                  <li className="text-gray-500 text-sm">Great job! No major critical weaknesses found.</li>
+                )}
+              </ul>
+            </div>
+          </div>
+        )}
+
         {/* AI Recommendations */}
         {report?.recommendations && (
           <div className="bg-gradient-to-r from-indigo-900/40 to-purple-900/40 border border-indigo-700 rounded-2xl p-6">

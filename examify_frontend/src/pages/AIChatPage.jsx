@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Bot, Cross, Settings, ClipboardList, Landmark } from "lucide-react";
 import { useApiClient } from "../lib/useApiClient";
 import AppShell from "../components/AppShell";

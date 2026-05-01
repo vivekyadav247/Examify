@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useApiClient } from "../lib/useApiClient";
 import AppShell from "../components/AppShell";
-
-
+import { Target, Trophy, TrendingUp, AlertTriangle } from "lucide-react";
 
 const EXAM_CONFIGS = {
   upsc: {
@@ -14,7 +13,7 @@ const EXAM_CONFIGS = {
     total_candidates: 1000000,
     seats: 1000,
   },
-  jee_mains: {
+  jee: {
     name: "JEE Mains",
     max_marks: 300,
     negative: -1,
@@ -45,46 +44,85 @@ const EXAM_CONFIGS = {
 
 export default function RankPredictorPage() {
   const { apiFetch } = useApiClient();
-  const [exam, setExam] = useState("upsc");
-  const [scores, setScores] = useState({ correct: "", incorrect: "", unattempted: "" });
-  const [category, setCategory] = useState("general");
+  const [loading, setLoading] = useState(true);
   const [prediction, setPrediction] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState("calculator"); // calculator | ai
+  const [error, setError] = useState("");
+  const [userExam, setUserExam] = useState("upsc");
 
-  const config = EXAM_CONFIGS[exam];
+  useEffect(() => {
+    fetchLatestMockAndPredict();
+  }, []);
 
-  const calculateLocally = () => {
-    const correct = parseInt(scores.correct) || 0;
-    const incorrect = parseInt(scores.incorrect) || 0;
-    const marks = correct * (config.max_marks / config.total_questions) + incorrect * config.negative;
-    const percentage = (marks / config.max_marks) * 100;
-    const estimatedRank = Math.round(
-      config.total_candidates * (1 - percentage / 100) * 0.7
-    );
-    const passed = marks >= config.cutoff_range[0];
-    return { marks: Math.max(0, marks), percentage, estimatedRank, passed };
-  };
-
-  const predict = async () => {
+  const fetchLatestMockAndPredict = async () => {
     setLoading(true);
-    setPrediction(null);
-    const localCalc = calculateLocally();
-    if (mode === "calculator") {
-      setPrediction({ ...localCalc, source: "local", exam_name: config.name });
-      setLoading(false);
-      return;
-    }
     try {
-      const res = await apiFetch(`/api/predict-rank/`, {
+      // 1. Get user profile for exam target
+      const userRes = await apiFetch("/api/users/me/");
+      if (userRes.ok) {
+        const userData = await userRes.json();
+        const examMap = {
+          "UPSC_CSE": "upsc", "UPSC_IFS": "upsc",
+          "JEE_Mains": "jee", "JEE_Advanced": "jee",
+          "NEET": "neet",
+          "SSC_CGL": "ssc_cgl", "SSC_CHSL": "ssc_cgl",
+        };
+        setUserExam(examMap[userData.exam_target] || "upsc");
+      }
+
+      // 2. Get latest mock test results from DNA report
+      const dnaRes = await apiFetch(`/api/analytics/dna-full/`);
+      const dnaData = await dnaRes.json();
+
+      if (!dnaData.sessions || dnaData.sessions.length === 0) {
+        setError("You haven't taken any mock tests yet. Complete a mock test first to predict your rank!");
+        setLoading(false);
+        return;
+      }
+
+      const latestSession = dnaData.sessions[0]; // the most recent session
+      
+      // Calculate scores based on the session accuracy and questions
+      const config = EXAM_CONFIGS[userExam] || EXAM_CONFIGS["upsc"];
+      
+      // If the session didn't have full questions, we extrapolate the percentage to the full exam
+      const sessionScorePct = latestSession.score || 0; 
+      const estimatedMarks = (sessionScorePct / 100) * config.max_marks;
+      
+      const estimatedRank = Math.round(
+        config.total_candidates * (1 - sessionScorePct / 100) * 0.7
+      );
+      
+      const passed = estimatedMarks >= config.cutoff_range[0];
+
+      // 3. Ask AI for deeper analysis
+      const aiRes = await apiFetch(`/api/predict-rank/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ exam, scores, category, ...localCalc }),
+        body: JSON.stringify({ 
+          exam: userExam, 
+          marks: estimatedMarks, 
+          percentage: sessionScorePct, 
+          category: "general", // We can default to general or fetch from profile
+          estimatedRank 
+        }),
       });
-      const data = await res.json();
-      setPrediction({ ...localCalc, ...data, source: "ai" });
-    } catch {
-      setPrediction({ ...localCalc, source: "local", exam_name: config.name });
+      const aiData = await aiRes.json();
+
+      setPrediction({
+        exam_name: config.name,
+        marks: estimatedMarks,
+        max_marks: config.max_marks,
+        percentage: sessionScorePct,
+        estimatedRank,
+        passed,
+        cutoff_range: config.cutoff_range,
+        total_candidates: config.total_candidates,
+        seats: config.seats,
+        ...aiData
+      });
+    } catch (err) {
+      console.error(err);
+      setError("Failed to generate rank prediction. Please try again later.");
     }
     setLoading(false);
   };
@@ -98,192 +136,131 @@ export default function RankPredictorPage() {
 
   return (
     <AppShell activePath={window.location.pathname}>
-      <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold flex items-center gap-3 mb-2">
-            <span className="text-4xl">🏆</span> Rank Predictor
-          </h1>
-          <p className="text-[var(--text-muted)]">Estimate your rank based on attempted questions</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Input Form */}
-          <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 space-y-5">
-            {/* Mode Toggle */}
-            <div className="flex gap-2 bg-[var(--surface-2)] rounded-xl p-1">
-              <button
-                onClick={() => setMode("calculator")}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${mode === "calculator" ? "bg-[var(--accent)] text-[var(--bg)] text-[var(--text)]" : "text-[var(--text-muted)]"}`}
-              >
-                📊 Calculator
-              </button>
-              <button
-                onClick={() => setMode("ai")}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${mode === "ai" ? "bg-[var(--accent)] text-[var(--bg)] text-[var(--text)]" : "text-[var(--text-muted)]"}`}
-              >
-                🤖 AI Predict
-              </button>
-            </div>
-
-            {/* Exam */}
+      <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] p-6 flex flex-col items-center">
+        <div className="w-full max-w-4xl">
+          <div className="mb-8 flex items-center justify-between">
             <div>
-              <label className="block text-sm font-semibold text-[var(--text-muted)] mb-2 uppercase tracking-wider">Exam</label>
-              <select
-                className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-xl px-4 py-3 text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
-                value={exam}
-                onChange={(e) => setExam(e.target.value)}
-              >
-                {Object.entries(EXAM_CONFIGS).map(([k, v]) => (
-                  <option key={k} value={k}>{v.name}</option>
-                ))}
-              </select>
+              <h1 className="text-3xl font-bold flex items-center gap-3 mb-2">
+                <Trophy className="text-yellow-400" size={32} /> Rank Predictor
+              </h1>
+              <p className="text-[var(--text-muted)]">Automatic AI prediction based on your latest Mock Test</p>
             </div>
-
-            {/* Exam Info */}
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: "Max Marks", value: config.max_marks },
-                { label: "Questions", value: config.total_questions },
-                { label: "Negative", value: config.negative },
-              ].map((info) => (
-                <div key={info.label} className="bg-[var(--surface-2)] rounded-xl p-3 text-center">
-                  <div className="text-lg font-bold text-[var(--text)]">{info.value}</div>
-                  <div className="text-xs text-[var(--text-muted)]">{info.label}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Score Inputs */}
-            <div className="space-y-3">
-              {[
-                { key: "correct", label: "Correct Answers", color: "border-green-600 focus:border-green-400" },
-                { key: "incorrect", label: "Incorrect Answers", color: "border-red-600 focus:border-red-400" },
-                { key: "unattempted", label: "Unattempted", color: "border-gray-600 focus:border-gray-400" },
-              ].map((field) => (
-                <div key={field.key}>
-                  <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1 uppercase">{field.label}</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max={config.total_questions}
-                    className={`w-full bg-[var(--surface-2)] border rounded-xl px-4 py-3 text-[var(--text)] focus:outline-none transition-colors ${field.color}`}
-                    placeholder="0"
-                    value={scores[field.key]}
-                    onChange={(e) => setScores((s) => ({ ...s, [field.key]: e.target.value }))}
-                  />
-                </div>
-              ))}
-            </div>
-
-            {/* Category */}
-            <div>
-              <label className="block text-sm font-semibold text-[var(--text-muted)] mb-2 uppercase tracking-wider">Category</label>
-              <div className="flex flex-wrap gap-2">
-                {["general", "obc", "sc", "st", "ews"].map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setCategory(cat)}
-                    className={`px-3 py-1.5 rounded-lg text-xs uppercase font-semibold border transition-colors ${
-                      category === cat ? "bg-[var(--accent)] text-[var(--bg)] border-indigo-400 text-[var(--text)]" : "bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-muted)]"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <button
-              onClick={predict}
-              disabled={loading || !scores.correct}
-              className="w-full bg-[var(--accent)] text-[var(--bg)] hover:bg-[var(--accent-2)] text-[var(--bg)] disabled:bg-gray-700 text-[var(--text)] font-bold py-3 rounded-xl transition-colors"
-            >
-              {loading ? "Predicting..." : "🔮 Predict My Rank"}
-            </button>
+            {prediction && (
+              <button onClick={fetchLatestMockAndPredict} className="px-4 py-2 bg-[var(--surface-2)] border border-[var(--border)] rounded-xl hover:bg-[var(--surface)] text-sm font-semibold transition-colors">
+                Refresh Prediction
+              </button>
+            )}
           </div>
 
-          {/* Result */}
-          <div>
-            {prediction ? (
-              <div className="space-y-4">
-                {/* Main Result */}
-                <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 text-center">
-                  <p className="text-[var(--text-muted)] text-sm mb-2">{prediction.exam_name || config.name}</p>
-                  <div className="text-6xl font-black text-[var(--text)] mb-1">
+          {loading ? (
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-12 text-center flex flex-col items-center">
+              <div className="w-12 h-12 border-4 border-[var(--accent)] border-t-transparent rounded-full animate-spin mb-4"></div>
+              <h3 className="text-xl font-bold text-[var(--text)] mb-2">Analyzing your Mock Test Data</h3>
+              <p className="text-[var(--text-muted)]">Running your performance against {EXAM_CONFIGS[userExam]?.total_candidates?.toLocaleString() || "millions of"} candidates...</p>
+            </div>
+          ) : error ? (
+            <div className="bg-[var(--surface)] border border-red-900/50 rounded-2xl p-8 text-center flex flex-col items-center">
+              <AlertTriangle className="text-red-500 mb-4" size={48} />
+              <h3 className="text-xl font-bold text-[var(--text)] mb-2">No Mock Test Found</h3>
+              <p className="text-[var(--text-muted)] mb-6">{error}</p>
+              <button 
+                onClick={() => window.location.href='/mock-test'}
+                className="bg-[var(--accent)] text-[var(--bg)] font-bold py-3 px-6 rounded-xl transition-colors hover:scale-105"
+              >
+                Take a Mock Test Now
+              </button>
+            </div>
+          ) : prediction && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-6">
+                {/* Main Result Card */}
+                <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-8 text-center relative overflow-hidden shadow-xl">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--accent)] opacity-5 blur-3xl rounded-full"></div>
+                  
+                  <p className="text-[var(--accent)] font-bold text-sm tracking-wider uppercase mb-4">{prediction.exam_name}</p>
+                  <div className="text-7xl font-black text-[var(--text)] mb-2 tracking-tighter">
                     {Math.round(prediction.marks)}
                   </div>
-                  <p className="text-[var(--text-muted)] text-sm">out of {config.max_marks} marks</p>
-                  <div className="mt-4 w-full bg-gray-700 rounded-full h-3">
+                  <p className="text-[var(--text-muted)] font-medium">Estimated marks out of {prediction.max_marks}</p>
+                  
+                  <div className="mt-8 w-full bg-[var(--surface-2)] rounded-full h-4 overflow-hidden border border-[var(--border)]">
                     <div
-                      className={`h-3 rounded-full transition-all duration-700 ${
+                      className={`h-full rounded-full transition-all duration-1000 ${
                         prediction.percentage >= 60 ? "bg-green-500" :
                         prediction.percentage >= 40 ? "bg-yellow-500" : "bg-red-500"
                       }`}
                       style={{ width: `${Math.min(100, prediction.percentage)}%` }}
                     />
                   </div>
-                  <p className="text-xs text-[var(--text-muted)] mt-1">{prediction.percentage?.toFixed(1)}% score</p>
+                  <p className="text-sm font-semibold text-[var(--text-muted)] mt-3">Accuracy Match: {prediction.percentage?.toFixed(1)}%</p>
                 </div>
 
+                {/* Status Card */}
+                <div className={`rounded-3xl border p-6 flex items-center gap-4 ${
+                  prediction.passed
+                    ? "bg-green-900/10 border-green-500/30"
+                    : "bg-red-900/10 border-red-500/30"
+                }`}>
+                  <div className={`p-3 rounded-xl ${prediction.passed ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
+                    <Target size={28} />
+                  </div>
+                  <div>
+                    <p className={`text-xl font-bold ${prediction.passed ? "text-green-400" : "text-red-400"}`}>
+                      {prediction.passed ? "Likely to Clear Cutoff" : "Below Expected Cutoff"}
+                    </p>
+                    <p className="text-sm text-[var(--text-muted)] mt-1">
+                      Expected cutoff range: {prediction.cutoff_range[0]}–{prediction.cutoff_range[1]} marks
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6">
                 {/* Rank Card */}
-                <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5">
-                  <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">Estimated Rank</p>
-                  <p className={`text-4xl font-black ${getRankColor(prediction.estimatedRank, config.seats)}`}>
+                <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-6 shadow-lg">
+                  <div className="flex items-center gap-3 mb-4">
+                    <TrendingUp className="text-[var(--accent)]" size={24} />
+                    <h3 className="font-bold text-lg text-[var(--text)]">Estimated Rank</h3>
+                  </div>
+                  <p className={`text-5xl font-black mb-2 tracking-tight ${getRankColor(prediction.estimatedRank, prediction.seats)}`}>
                     #{(prediction.rank || prediction.estimatedRank)?.toLocaleString()}
                   </p>
-                  <p className="text-xs text-[var(--text-muted)] mt-1">
-                    Out of {config.total_candidates.toLocaleString()} candidates
-                  </p>
-                </div>
-
-                {/* Status */}
-                <div className={`rounded-2xl border p-4 text-center ${
-                  prediction.passed
-                    ? "bg-green-900/30 border-green-700"
-                    : "bg-red-900/30 border-red-700"
-                }`}>
-                  <p className={`text-xl font-bold ${prediction.passed ? "text-green-400" : "text-red-400"}`}>
-                    {prediction.passed ? "✅ Likely to Clear Cutoff" : "❌ Below Expected Cutoff"}
-                  </p>
-                  <p className="text-xs text-[var(--text-muted)] mt-1">
-                    Expected cutoff: {config.cutoff_range[0]}–{config.cutoff_range[1]} · {category.toUpperCase()} category
+                  <p className="text-sm text-[var(--text-muted)] font-medium">
+                    Out of {prediction.total_candidates.toLocaleString()} competing candidates
                   </p>
                 </div>
 
                 {/* AI Analysis */}
                 {prediction.analysis && (
-                  <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                    <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-2">AI Analysis</p>
-                    <p className="text-sm text-gray-300 leading-relaxed">{prediction.analysis}</p>
+                  <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-6 shadow-lg">
+                    <h3 className="font-bold text-lg text-[var(--text)] mb-3 flex items-center gap-2">
+                      <span className="text-[var(--accent)]">🤖</span> AI Performance DNA
+                    </h3>
+                    <p className="text-[var(--text-muted)] leading-relaxed">{prediction.analysis}</p>
                   </div>
                 )}
 
-                {prediction.suggestions && (
-                  <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-4">
-                    <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-2">Suggestions</p>
-                    <ul className="space-y-1">
+                {/* Suggestions */}
+                {prediction.suggestions && prediction.suggestions.length > 0 && (
+                  <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-6 shadow-lg">
+                    <h3 className="font-bold text-lg text-[var(--text)] mb-4">Action Plan</h3>
+                    <ul className="space-y-3">
                       {prediction.suggestions.map((s, i) => (
-                        <li key={i} className="text-sm text-gray-300 flex gap-2">
-                          <span className="text-[var(--accent)] shrink-0">→</span>{s}
+                        <li key={i} className="flex gap-3 text-[var(--text-muted)]">
+                          <div className="w-6 h-6 rounded-full bg-[var(--surface-2)] text-[var(--accent)] flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
+                            {i + 1}
+                          </div>
+                          <span className="leading-relaxed">{s}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="bg-[var(--surface)] border border-dashed border-[var(--border)] rounded-2xl p-8 min-h-96 flex items-center justify-center">
-                <div className="text-center">
-                  <span className="text-6xl">🎯</span>
-                  <p className="text-[var(--text-muted)] mt-3">Enter your answers and predict rank</p>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
-    </div>
     </AppShell>
   );
 }

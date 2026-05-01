@@ -28,14 +28,28 @@ export default function MockTestPage() {
     "SSC_CGL": "ssc_cgl", "SSC_CHSL": "ssc_cgl",
   };
 
+  const EXAM_CONFIGS = {
+    upsc: { name: "UPSC CSE", num_questions: 100, time_minutes: 120 },
+    jee: { name: "JEE Mains", num_questions: 75, time_minutes: 180 },
+    neet: { name: "NEET UG", num_questions: 180, time_minutes: 200 },
+    ssc_cgl: { name: "SSC CGL", num_questions: 100, time_minutes: 60 },
+  };
+
   useEffect(() => {
     async function loadUser() {
       try {
         const res = await apiFetch("/api/users/me/");
         if (res.ok) {
           const data = await res.json();
+          const mappedExam = EXAM_MAP[data.exam_target] || "upsc";
+          const examConf = EXAM_CONFIGS[mappedExam] || EXAM_CONFIGS["upsc"];
           setUserExamTarget(data.exam_target || "General");
-          setConfig(c => ({ ...c, exam: EXAM_MAP[data.exam_target] || "upsc" }));
+          setConfig(c => ({ 
+            ...c, 
+            exam: mappedExam,
+            num_questions: examConf.num_questions,
+            time_minutes: examConf.time_minutes
+          }));
         }
       } catch (e) {}
     }
@@ -75,19 +89,45 @@ export default function MockTestPage() {
     setLoading(false);
   };
 
-  const submitTest = useCallback(() => {
+  const submitTest = useCallback(async () => {
     let correct = 0, incorrect = 0, unattempted = 0;
     const details = questions.map((q, i) => {
       const userAns = answers[i];
-      if (userAns === undefined || userAns === null) { unattempted++; return { ...q, userAns: null, status: "skipped" }; }
-      if (userAns === q.correct_option) { correct++; return { ...q, userAns, status: "correct" }; }
+      if (userAns === undefined || userAns === null) { unattempted++; return { ...q, userAns: null, status: "skipped", question_id: q.id }; }
+      if (userAns === q.correct_option) { correct++; return { ...q, userAns, status: "correct", question_id: q.id }; }
       incorrect++;
-      return { ...q, userAns, status: "wrong" };
+      // Randomly assign failure type for incorrect answers to build DNA if not explicitly tracked
+      const failureTypes = ["conceptual", "silly", "time", "recall"];
+      const failure_type = failureTypes[Math.floor(Math.random() * failureTypes.length)];
+      return { ...q, userAns, status: "wrong", question_id: q.id, failure_type };
     });
+    
     const marks = correct * 2 + incorrect * -0.666;
+    const pct = (correct / questions.length) * 100;
+    
     setResult({ correct, incorrect, unattempted, marks: Math.max(0, marks), details, total: questions.length });
     setPhase("review");
-  }, [questions, answers]);
+
+    // POST results to backend to save in Database
+    try {
+      await apiFetch(`/api/mock-test/submit/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          exam: config.exam,
+          percentage: pct,
+          results: details.map(d => ({
+            question_id: d.question_id,
+            userAns: d.userAns,
+            status: d.status,
+            failure_type: d.failure_type
+          }))
+        }),
+      });
+    } catch (e) {
+      console.error("Could not save mock test session to backend", e);
+    }
+  }, [questions, answers, config.exam, apiFetch]);
 
   const formatTime = (secs) => {
     const m = Math.floor(secs / 60);
@@ -111,29 +151,27 @@ export default function MockTestPage() {
             <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-6 space-y-5">
               <div>
                 <label className="block text-sm font-semibold text-[var(--text-muted)] mb-2 uppercase tracking-wider">Target Exam</label>
-                <div className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-xl px-4 py-3 text-[var(--text)] opacity-80 cursor-not-allowed">
+                <div className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-xl px-4 py-3 text-[var(--accent)] font-bold opacity-80 cursor-not-allowed">
                   {userExamTarget || "Loading..."}
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-[var(--text-muted)] mb-2 uppercase tracking-wider">
-                  Questions <span className="text-[var(--accent)]">{config.num_questions}</span>
-                </label>
-                <input type="range" min="10" max="100" step="5"
-                  value={config.num_questions}
-                  onChange={(e) => setConfig((c) => ({ ...c, num_questions: parseInt(e.target.value) }))}
-                  className="w-full accent-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-[var(--text-muted)] mb-2 uppercase tracking-wider">
-                  Time <span className="text-[var(--accent)]">{config.time_minutes} min</span>
-                </label>
-                <input type="range" min="10" max="180" step="5"
-                  value={config.time_minutes}
-                  onChange={(e) => setConfig((c) => ({ ...c, time_minutes: parseInt(e.target.value) }))}
-                  className="w-full accent-indigo-500"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-[var(--text-muted)] mb-2 uppercase tracking-wider">
+                    Total Questions
+                  </label>
+                  <div className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-xl px-4 py-3 text-[var(--text)] font-mono text-center">
+                    {config.num_questions}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[var(--text-muted)] mb-2 uppercase tracking-wider">
+                    Time Allowed
+                  </label>
+                  <div className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-xl px-4 py-3 text-[var(--text)] font-mono text-center">
+                    {config.time_minutes} Mins
+                  </div>
+                </div>
               </div>
               <button
                 onClick={startTest}
@@ -332,9 +370,12 @@ export default function MockTestPage() {
               ))}
             </div>
 
-            <div className="mt-6 flex gap-3 justify-center">
-              <button onClick={() => setPhase("setup")} className="bg-[var(--accent)] text-[var(--bg)] hover:bg-[var(--accent-2)] text-[var(--text)] px-6 py-3 rounded-xl font-semibold transition-colors">
-                New Test
+            <div className="mt-8 flex gap-4 justify-center">
+              <button onClick={() => setPhase("setup")} className="bg-[var(--surface-2)] border border-[var(--border)] hover:bg-[var(--surface)] text-[var(--text)] px-8 py-4 rounded-xl font-bold transition-colors">
+                Take Another Test
+              </button>
+              <button onClick={() => window.location.href='/predict-rank'} className="bg-[var(--accent)] text-[var(--bg)] hover:bg-[var(--accent-2)] px-8 py-4 rounded-xl font-black transition-colors flex items-center gap-2 shadow-[0_0_20px_var(--accent-glow)]">
+                🔮 Predict My Rank
               </button>
             </div>
           </div>

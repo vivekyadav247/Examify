@@ -2,16 +2,33 @@
 examify_backend/features/views.py
 
 New AI-powered views for all Examify features.
-Uses your existing OpenRouter setup.
+Refactored to Class-Based Views (CBV) for scalability and better structure.
 """
 
 import json
-import os
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
+from django.db.models import Count, Q
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.exceptions import ValidationError
 
 from engines.question_gen import client as groq_client, _get_model
+from engines.question_gen import get_or_generate, generate_diagnostic_set
+from quiz.models import Question, QuizSession, SessionAnswer
+
+EXAM_SLUG_MAP = {
+    "upsc": "UPSC_CSE",
+    "jee": "JEE_Mains",
+    "neet": "NEET",
+    "ssc_cgl": "SSC_CGL",
+    "cat": "CAT",
+    "gate": "GATE",
+}
+
+def get_real_exam_key(slug):
+    return EXAM_SLUG_MAP.get(slug.lower(), slug)
+
+
 
 def ai_complete(prompt, system="You are an expert competitive exam tutor for India.", max_tokens=2000):
     """Helper to call AI and return text."""
@@ -20,7 +37,7 @@ def ai_complete(prompt, system="You are an expert competitive exam tutor for Ind
             model=_get_model(),
             max_tokens=max_tokens,
             messages=[
-                {"role": "system", "content": system},
+                {"role": "system", "content": system + "\nIMPORTANT: Provide the output in a mix of simple English and Hindi (Hinglish) to make it easy for Indian students to understand, unless specifically asked to use only English."},
                 {"role": "user", "content": prompt},
             ],
         )
@@ -31,7 +48,6 @@ def ai_complete(prompt, system="You are an expert competitive exam tutor for Ind
 
 # ============================================================
 # SYLLABUS API
-# GET /api/syllabus/?exam=upsc
 # ============================================================
 
 STATIC_SYLLABUS = {
@@ -159,14 +175,16 @@ STATIC_SYLLABUS = {
     },
 }
 
+class SyllabusView(APIView):
+    permission_classes = [AllowAny]
 
-@csrf_exempt
-def syllabus_view(request):
-    exam = request.GET.get("exam", "upsc").lower()
-    if exam in STATIC_SYLLABUS:
-        return JsonResponse(STATIC_SYLLABUS[exam])
-    # AI-generate for unknown exams
-    prompt = f"""Generate a detailed exam syllabus for {exam} exam in India.
+    def get(self, request):
+        exam = request.GET.get("exam", "upsc").lower()
+        if exam in STATIC_SYLLABUS:
+            return Response(STATIC_SYLLABUS[exam])
+        
+        # AI-generate for unknown exams
+        prompt = f"""Generate a detailed exam syllabus for {exam} exam in India.
 Return as JSON with structure:
 {{
   "exam_info": {{"Full Name": "...", "Conducting Body": "...", "Duration": "..."}},
@@ -181,62 +199,61 @@ Return as JSON with structure:
     }}
   ]
 }}
-Return ONLY JSON, no markdown."""
-    raw = ai_complete(prompt)
-    try:
-        data = json.loads(raw)
-        return JsonResponse(data)
-    except Exception:
-        return JsonResponse({"raw_text": raw, "subjects": []})
+Return ONLY JSON, no markdown. Use simple Hinglish (Hindi+English) for topic names if applicable, but keep keys in English."""
+        raw = ai_complete(prompt)
+        try:
+            data = json.loads(raw.strip().lstrip("```json").rstrip("```"))
+            return Response(data)
+        except Exception:
+            return Response({"raw_text": raw, "subjects": []})
 
 
 # ============================================================
 # NOTES GENERATION API
-# POST /api/notes/generate/
 # ============================================================
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def generate_notes(request):
-    body = json.loads(request.body)
-    exam = body.get("exam", "upsc")
-    topic = body.get("topic", "")
-    note_type = body.get("note_type", "quick")
+class GenerateNotesView(APIView):
+    permission_classes = [IsAuthenticated]
 
-    type_prompts = {
-        "quick": f"Generate ultra-concise quick revision notes for {topic} for {exam.upper()} exam. Use bullet points, bold key terms, max 300 words. Focus on exam-important points only.",
-        "detailed": f"Generate comprehensive detailed notes for {topic} for {exam.upper()} exam. Cover all important subtopics with examples. Use headings, bullet points, and highlight key terms with **bold**.",
-        "mindmap": f"Generate mind map style notes for {topic} for {exam.upper()} exam. Show main topic → branches → sub-branches. Use → arrows and indentation.",
-        "formula": f"Generate a formula sheet / key facts sheet for {topic} for {exam.upper()} exam. List only formulas, important dates, important figures, and shortcuts. One per line.",
-        "mcq_focused": f"Generate MCQ-focused notes for {topic} for {exam.upper()} exam. Include: common tricky facts, frequently tested points, important numbers/dates, typical MCQ traps to avoid. Format as numbered list.",
-    }
+    def post(self, request):
+        exam = request.data.get("exam", "upsc")
+        topic = request.data.get("topic", "")
+        note_type = request.data.get("note_type", "quick")
 
-    prompt = type_prompts.get(note_type, type_prompts["quick"])
-    content = ai_complete(prompt, system=f"You are an expert {exam.upper()} exam tutor. Generate clear, accurate notes.")
-    return JsonResponse({"content": content, "topic": topic, "exam": exam, "note_type": note_type})
+        type_prompts = {
+            "quick": f"Generate ultra-concise quick revision notes for {topic} for {exam.upper()} exam. Use bullet points, bold key terms, max 300 words. Focus on exam-important points only.",
+            "detailed": f"Generate comprehensive detailed notes for {topic} for {exam.upper()} exam. Cover all important subtopics with examples. Use headings, bullet points, and highlight key terms with **bold**.",
+            "mindmap": f"Generate mind map style notes for {topic} for {exam.upper()} exam. Show main topic → branches → sub-branches. Use → arrows and indentation.",
+            "formula": f"Generate a formula sheet / key facts sheet for {topic} for {exam.upper()} exam. List only formulas, important dates, important figures, and shortcuts. One per line.",
+            "mcq_focused": f"Generate MCQ-focused notes for {topic} for {exam.upper()} exam. Include: common tricky facts, frequently tested points, important numbers/dates, typical MCQ traps to avoid. Format as numbered list.",
+        }
+
+        prompt = type_prompts.get(note_type, type_prompts["quick"])
+        content = ai_complete(prompt, system=f"You are an expert {exam.upper()} exam tutor. Generate clear, accurate notes.")
+        return Response({"content": content, "topic": topic, "exam": exam, "note_type": note_type})
 
 
 # ============================================================
 # STUDY PLAN GENERATION
-# POST /api/plan/generate/
 # ============================================================
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def generate_plan(request):
-    body = json.loads(request.body)
-    exam = body.get("exam", "upsc")
-    exam_date = body.get("exam_date", "")
-    daily_hours = body.get("daily_hours", 6)
-    weak_subjects = body.get("weak_subjects", [])
-    current_level = body.get("current_level", "beginner")
+class GeneratePlanView(APIView):
+    permission_classes = [IsAuthenticated]
 
-    prompt = f"""Create a detailed weekly study plan for a student preparing for {exam.upper()} exam.
+    def post(self, request):
+        exam = request.data.get("exam", "upsc")
+        exam_date = request.data.get("exam_date", "")
+        daily_hours = request.data.get("daily_hours", 6)
+        weak_subjects = request.data.get("weak_subjects", [])
+        current_level = request.data.get("current_level", "beginner")
+
+        prompt = f"""Create a highly detailed visual study plan (Candy Crush map style) for a student preparing for {exam.upper()} exam.
 Exam Date: {exam_date or 'Not specified'}
 Daily Study Hours: {daily_hours} hours
 Current Level: {current_level}
 Weak Subjects (needs extra attention): {', '.join(weak_subjects) if weak_subjects else 'None specified'}
 
+Structure the plan into levels (like game levels/weeks). For each level, detail specific tasks and topics.
 Return as JSON:
 {{
   "total_weeks": 12,
@@ -249,8 +266,7 @@ Return as JSON:
         {{
           "day": "Monday",
           "tasks": [
-            {{"subject": "History", "duration": "2h", "activity": "Read Ch 1-3"}},
-            {{"subject": "Polity", "duration": "1.5h", "activity": "Preamble & FR"}}
+            {{"subject": "History", "duration": "2h", "activity": "Read Ch 1-3"}}
           ]
         }}
       ]
@@ -259,262 +275,365 @@ Return as JSON:
 }}
 Create at least 4 weeks. Return ONLY JSON."""
 
-    raw = ai_complete(prompt, max_tokens=3000)
-    try:
-        data = json.loads(raw.strip().lstrip("```json").rstrip("```"))
-        return JsonResponse(data)
-    except Exception:
-        return JsonResponse({"raw_plan": raw, "total_weeks": "N/A", "revision_rounds": 2})
+        raw = ai_complete(prompt, max_tokens=3000)
+        try:
+            data = json.loads(raw.strip().lstrip("```json").rstrip("```"))
+            return Response(data)
+        except Exception:
+            return Response({"raw_plan": raw, "total_weeks": "N/A", "revision_rounds": 2})
 
 
 # ============================================================
 # AI CHAT
-# POST /api/chat/
 # ============================================================
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def ai_chat(request):
-    body = json.loads(request.body)
-    exam = body.get("exam", "general")
-    message = body.get("message", "")
-    history = body.get("history", [])
+class AIChatView(APIView):
+    permission_classes = [IsAuthenticated]
 
-    exam_systems = {
-        "upsc": "You are an expert IAS mentor helping UPSC CSE aspirants. You know Indian history, polity, economy, geography, current affairs. Give precise, exam-relevant answers. Use examples. For MCQs, explain why each option is right/wrong.",
-        "jee": "You are a JEE Advanced expert tutor. You excel in Physics, Chemistry, Mathematics. Solve problems step by step. Show all working. Highlight common mistakes. Give tips for JEE strategy.",
-        "neet": "You are a NEET UG expert. You know Biology, Physics, Chemistry for NEET. Explain concepts clearly. Give NCERT-based answers. Point out frequently asked topics.",
-        "ssc_cgl": "You are an SSC CGL expert. Help with Quantitative Aptitude, English, Reasoning, and GK. Give shortcuts and tricks. Focus on accuracy and speed.",
-        "banking": "You are a Banking exam expert (IBPS, SBI). Help with Data Interpretation, Reasoning, English, Banking Awareness. Give tips for puzzles and seating arrangements.",
-        "general": "You are an expert competitive exam tutor for India. Help students with any exam preparation.",
-    }
+    def post(self, request):
+        exam = request.data.get("exam", "general")
+        message = request.data.get("message", "")
+        history = request.data.get("history", [])
 
-    system = exam_systems.get(exam, exam_systems["general"])
+        exam_systems = {
+            "upsc": "You are an expert IAS mentor helping UPSC CSE aspirants. You know Indian history, polity, economy, geography, current affairs. Give precise, exam-relevant answers. Use examples. Explain in simple Hinglish (Hindi + English) so it's very easy to understand.",
+            "jee": "You are a JEE Advanced expert tutor. You excel in Physics, Chemistry, Mathematics. Solve problems step by step. Show all working. Explain concepts in simple Hinglish (Hindi + English).",
+            "neet": "You are a NEET UG expert. You know Biology, Physics, Chemistry for NEET. Explain concepts clearly. Give NCERT-based answers in simple Hinglish (Hindi + English).",
+            "ssc_cgl": "You are an SSC CGL expert. Help with Quantitative Aptitude, English, Reasoning, and GK. Give shortcuts and tricks in simple Hinglish (Hindi + English).",
+            "banking": "You are a Banking exam expert (IBPS, SBI). Help with Data Interpretation, Reasoning, English, Banking Awareness. Explain tips in simple Hinglish.",
+            "general": "You are an expert competitive exam tutor for India. Help students with any exam preparation in simple Hinglish (Hindi + English).",
+        }
 
-    try:
-        messages = [{"role": "system", "content": system}]
-        # Add history (last 10 messages for context)
-        for h in history[-10:]:
-            messages.append({"role": h["role"], "content": h["content"]})
-        messages.append({"role": "user", "content": message})
+        system = exam_systems.get(exam, exam_systems["general"])
 
-        response = groq_client.chat.completions.create(
-            model=_get_model(),
-            max_tokens=1500,
-            messages=messages,
-        )
-        reply = response.choices[0].message.content
-        return JsonResponse({"reply": reply})
-    except Exception as e:
-        return JsonResponse({"reply": f"Error: {str(e)}"}, status=500)
+        try:
+            messages = [{"role": "system", "content": system}]
+            for h in history[-10:]:
+                messages.append({"role": h["role"], "content": h["content"]})
+            messages.append({"role": "user", "content": message})
+
+            response = groq_client.chat.completions.create(
+                model=_get_model(),
+                max_tokens=1500,
+                messages=messages,
+            )
+            reply = response.choices[0].message.content
+            return Response({"reply": reply})
+        except Exception as e:
+            return Response({"reply": f"Error: {str(e)}"}, status=500)
 
 
 # ============================================================
 # RANK PREDICTOR
-# POST /api/predict-rank/
 # ============================================================
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def predict_rank(request):
-    body = json.loads(request.body)
-    exam = body.get("exam", "upsc")
-    marks = body.get("marks", 0)
-    percentage = body.get("percentage", 0)
-    category = body.get("category", "general")
-    estimated_rank = body.get("estimatedRank", 0)
+class PredictRankView(APIView):
+    permission_classes = [IsAuthenticated]
 
-    prompt = f"""A student appeared for {exam.upper()} exam.
-Marks scored: {marks}
-Percentage: {percentage:.1f}%
-Category: {category.upper()}
-Estimated rank: {estimated_rank}
+    def post(self, request):
+        exam_key = get_real_exam_key(request.data.get("exam", "upsc"))
+        marks = request.data.get("marks", 0)
+        percentage = request.data.get("percentage", 0)
+        category = request.data.get("category", "general")
+        estimated_rank = request.data.get("estimatedRank", 0)
 
-Provide:
-1. Detailed analysis of their performance
-2. Specific advice to improve rank
-3. Whether they are likely to make cutoff
-4. 3-4 specific action items
+        prompt = f"""You are a professional Indian competitive exam counselor. 
+A student appeared for the {exam_key} exam.
+Performance Data:
+- Marks: {marks}
+- Accuracy: {percentage:.1f}%
+- Predicted Rank: {estimated_rank}
+- Category: {category.upper()}
 
-Return as JSON:
+Provide a highly professional, human-readable report in a structured table-like wording format.
+Analyze if they are a 'Scholar' or 'Borderline' or 'Needs Pivot'.
+Give 3 specific actionable tips for {exam_key}.
+Return ONLY JSON:
 {{
   "rank": {estimated_rank},
-  "analysis": "2-3 sentence analysis",
+  "verdict": "Scholar/Borderline/Needs Improvement",
+  "analysis": "A detailed 2-3 sentence human-friendly wording.",
+  "table_data": [
+    {{"label": "Metric", "value": "Status"}},
+    {{"label": "Cutoff Probability", "value": "High/Medium/Low"}},
+    {{"label": "Percentile", "value": "Estimated 99.x"}}
+  ],
   "suggestions": ["suggestion 1", "suggestion 2", "suggestion 3"],
-  "verdict": "Pass/Borderline/Fail",
-  "next_steps": "What to do now"
+  "next_steps": "Immediate focus area"
 }}
 Return ONLY JSON."""
 
-    raw = ai_complete(prompt)
-    try:
-        data = json.loads(raw.strip().lstrip("```json").rstrip("```"))
-        return JsonResponse(data)
-    except Exception:
-        return JsonResponse({"rank": estimated_rank, "analysis": raw, "suggestions": []})
+
+        raw = ai_complete(prompt)
+        try:
+            data = json.loads(raw.strip().lstrip("```json").rstrip("```"))
+            return Response(data)
+        except Exception:
+            return Response({"rank": estimated_rank, "analysis": raw, "suggestions": []})
 
 
 # ============================================================
-# MOCK TEST GENERATION
-# POST /api/mock-test/
+# MOCK TEST GENERATION (Scalable Database-Backed)
 # ============================================================
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def generate_mock_test(request):
-    body = json.loads(request.body)
-    exam = body.get("exam", "upsc")
-    num_questions = min(int(body.get("num_questions", 25)), 50)
-    subject = body.get("subject", "mixed")
+class GenerateMockTestView(APIView):
+    permission_classes = [IsAuthenticated]
 
-    prompt = f"""Generate {num_questions} MCQ questions for {exam.upper()} exam.
-Mix topics from the standard syllabus. Make them exam-level difficulty.
+    def post(self, request):
+        exam_slug = request.data.get("exam", "upsc")
+        exam = get_real_exam_key(exam_slug)
+        num_questions = min(int(request.data.get("num_questions", 100)), 200) 
+        subject = request.data.get("subject", "mixed")
 
-Return as JSON:
-{{
-  "questions": [
-    {{
-      "question": "Question text here",
-      "options": {{"A": "Option A", "B": "Option B", "C": "Option C", "D": "Option D"}},
-      "correct_option": "A",
-      "explanation": "Brief explanation of why A is correct",
-      "topic": "Topic name",
-      "difficulty": "easy/medium/hard"
-    }}
-  ]
-}}
-Generate exactly {num_questions} questions. Return ONLY JSON."""
 
-    raw = ai_complete(prompt, max_tokens=4000)
-    try:
-        clean = raw.strip().lstrip("```json").rstrip("```").strip()
-        data = json.loads(clean)
-        return JsonResponse(data)
-    except Exception:
-        return JsonResponse({"questions": [], "error": "Failed to parse questions", "raw": raw[:500]}, status=500)
+        # Get questions the user has already answered to avoid repeats
+        answered_question_ids = SessionAnswer.objects.filter(
+            session__user=request.user
+        ).values_list("question_id", flat=True)
+
+        questions_list = []
+        
+        if subject == "mixed":
+            # Use diagnostic generator which spans multiple subjects
+            generated_qs = generate_diagnostic_set(exam)
+            # Filter out seen questions
+            unseen = [q for q in generated_qs if q.id not in answered_question_ids]
+            
+            # If still not enough, we fallback to random or accept shortage
+            questions_list = unseen[:num_questions]
+            if len(questions_list) < num_questions:
+                questions_list.extend([q for q in generated_qs if q not in unseen][:num_questions - len(questions_list)])
+        else:
+            # Query specific topic/subject, generate if short
+            generated_qs = get_or_generate(
+                topic="Comprehensive Mock",
+                difficulty=0.5,
+                exam=exam,
+                subject=subject,
+                min_count=num_questions,
+                exclude_ids=list(answered_question_ids)
+            )
+            questions_list = generated_qs[:num_questions]
+
+        if not questions_list:
+            return Response({"questions": [], "error": "Could not generate questions. AI may be rate-limited."}, status=500)
+
+        # Format for frontend
+        formatted_questions = []
+        for q in questions_list:
+            formatted_questions.append({
+                "id": str(q.id),
+                "question": q.question_text,
+                "options": {
+                    "A": q.options[0] if len(q.options) > 0 else "",
+                    "B": q.options[1] if len(q.options) > 1 else "",
+                    "C": q.options[2] if len(q.options) > 2 else "",
+                    "D": q.options[3] if len(q.options) > 3 else "",
+                },
+                "correct_option": ["A", "B", "C", "D"][q.correct_answer] if q.correct_answer < 4 else "A",
+                "explanation": q.explanation,
+                "topic": q.topic,
+                "difficulty": "hard" if q.difficulty > 0.7 else ("medium" if q.difficulty > 0.4 else "easy")
+            })
+
+        return Response({"questions": formatted_questions})
+
+
+class SubmitMockTestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        exam = request.data.get("exam", "upsc")
+        results = request.data.get("results", [])
+        
+        if not results:
+            return Response({"error": "No results provided"}, status=400)
+            
+        from django.utils import timezone
+        import uuid
+        
+        # Create a new session
+        session = QuizSession.objects.create(
+            user=request.user,
+            session_type="Mock Test",
+            exam_target=exam,
+            started_at=timezone.now(),
+            completed_at=timezone.now(),
+            score_pct=request.data.get("percentage", 0),
+            questions=[res.get("question_id") for res in results]
+        )
+        
+        total_questions = len(results)
+        correct_count = 0
+        
+        # Save answers
+        for res in results:
+            is_correct = res.get("status") == "correct"
+            if is_correct:
+                correct_count += 1
+                
+            q_id = res.get("question_id")
+            
+            try:
+                question = Question.objects.get(id=q_id)
+                SessionAnswer.objects.create(
+                    session=session,
+                    question=question,
+                    selected_option=["A", "B", "C", "D"].index(res.get("userAns")) if res.get("userAns") in ["A", "B", "C", "D"] else -1,
+                    is_correct=is_correct,
+                    time_taken_seconds=res.get("time_taken", 60),
+                    failure_type=res.get("failure_type", "conceptual") if not is_correct else None
+                )
+            except Exception:
+                continue
+                
+        session.score_pct = (correct_count / total_questions * 100) if total_questions > 0 else 0
+        session.save()
+        
+        return Response({"status": "success", "session_id": str(session.id)})
 
 
 # ============================================================
 # REVISION MATERIAL GENERATION
-# POST /api/revision/generate/
 # ============================================================
 
-@csrf_exempt
-@require_http_methods(["POST"])
-def generate_revision(request):
-    body = json.loads(request.body)
-    exam = body.get("exam", "upsc")
-    topic = body.get("topic", "")
-    revision_type = body.get("revision_type", "flashcards")
+class GenerateRevisionView(APIView):
+    permission_classes = [IsAuthenticated]
 
-    prompts = {
-        "flashcards": f"""Generate 12 flashcards for {topic} for {exam.upper()} exam.
+    def post(self, request):
+        exam = request.data.get("exam", "upsc")
+        topic = request.data.get("topic", "")
+        revision_type = request.data.get("revision_type", "flashcards")
+
+        prompts = {
+            "flashcards": f"""Generate 12 flashcards for {topic} for {exam.upper()} exam.
 Return JSON: {{"flashcards": [{{"question": "...", "answer": "..."}}]}}""",
 
-        "one_liners": f"""Generate 20 important one-liner facts for {topic} for {exam.upper()} exam.
+            "one_liners": f"""Generate 20 important one-liner facts for {topic} for {exam.upper()} exam.
 Return JSON: {{"items": ["fact1", "fact2", ...]}}""",
 
-        "mnemonics": f"""Generate 6 mnemonics to remember important lists/facts for {topic} for {exam.upper()} exam.
+            "mnemonics": f"""Generate 6 mnemonics to remember important lists/facts for {topic} for {exam.upper()} exam.
 Return JSON: {{"mnemonics": [{{"topic": "what to remember", "mnemonic": "MNEMONIC", "explanation": "what each letter means"}}]}}""",
 
-        "previous_year": f"""List important previous year question patterns and frequently asked topics for {topic} in {exam.upper()} exam.
+            "previous_year": f"""List important previous year question patterns and frequently asked topics for {topic} in {exam.upper()} exam.
 Return JSON: {{"patterns": [{{"year_range": "2018-2023", "pattern": "...", "example": "..."}}], "hot_topics": ["topic1", "topic2"]}}""",
 
-        "comparison_tables": f"""Create comparison tables for {topic} for {exam.upper()} exam.
+            "comparison_tables": f"""Create comparison tables for {topic} for {exam.upper()} exam.
 Return JSON: {{"tables": [{{"title": "...", "headers": ["Col1","Col2"], "rows": [["A","B"]]}}]}}""",
 
-        "timeline": f"""Create a chronological timeline for {topic} for {exam.upper()} exam.
+            "timeline": f"""Create a chronological timeline for {topic} for {exam.upper()} exam.
 Return JSON: {{"timeline": [{{"year": "1857", "event": "...", "significance": "..."}}]}}""",
-    }
+        }
 
-    prompt = prompts.get(revision_type, prompts["flashcards"])
-    raw = ai_complete(prompt + "\nReturn ONLY JSON, no markdown backticks.")
-    try:
-        clean = raw.strip().lstrip("```json").rstrip("```").strip()
-        data = json.loads(clean)
-        return JsonResponse(data)
-    except Exception:
-        return JsonResponse({"raw_content": raw})
+        prompt = prompts.get(revision_type, prompts["flashcards"])
+        raw = ai_complete(prompt + "\nReturn ONLY JSON, no markdown backticks.")
+        try:
+            clean = raw.strip().lstrip("```json").rstrip("```").strip()
+            data = json.loads(clean)
+            return Response(data)
+        except Exception:
+            return Response({"raw_content": raw})
 
 
 # ============================================================
 # DNA FULL REPORT
-# GET /api/analytics/dna-full/
 # ============================================================
 
-def dna_full_report(request):
-    """
-    Aggregates quiz session data and returns full DNA report.
-    This uses your existing quiz session models.
-    """
-    try:
-        # Try to get real data from your existing models
-        from quiz.models import QuizSession, SessionAnswer  # adjust to your model paths
+class DNAFullReportView(APIView):
+    permission_classes = [IsAuthenticated]
 
-        sessions = QuizSession.objects.filter(completed=True).order_by("-created_at")[:20]
-        total_sessions = sessions.count()
+    def get(self, request):
+        try:
+            sessions = QuizSession.objects.filter(user=request.user, completed_at__isnull=False).order_by("-started_at")[:20]
+            total_sessions = sessions.count()
 
-        if total_sessions == 0:
-            return JsonResponse(get_mock_dna_data())
+            if total_sessions == 0:
+                return Response(self.get_mock_dna_data())
 
-        # Aggregate DNA across sessions
-        dna_totals = {"conceptual": 0, "silly": 0, "time": 0, "recall": 0}
-        total_correct = 0
-        total_questions = 0
-        topic_data = {}
+            dna_totals = {"conceptual": 0, "silly": 0, "time": 0, "recall": 0}
+            total_correct = 0
+            total_questions = 0
 
-        for session in sessions:
-            if hasattr(session, 'dna_analysis') and session.dna_analysis:
-                for key in dna_totals:
-                    dna_totals[key] += session.dna_analysis.get(key, 0)
-            total_correct += getattr(session, 'correct_count', 0)
-            total_questions += getattr(session, 'total_questions', 0)
+            # For accurate DNA, we look at SessionAnswers!
+            answers = SessionAnswer.objects.filter(session__in=sessions)
+            total_questions = answers.count()
+            total_correct = answers.filter(is_correct=True).count()
+            
+            for ans in answers.filter(is_correct=False):
+                if ans.failure_type in dna_totals:
+                    dna_totals[ans.failure_type] += 1
 
-        # Normalize DNA percentages
-        total_dna = sum(dna_totals.values()) or 1
-        overall_dna = {k: round((v / total_dna) * 100) for k, v in dna_totals.items()}
+            total_failures = sum(dna_totals.values()) or 1
+            overall_dna = {k: round((v / total_failures) * 100) for k, v in dna_totals.items()}
+            accuracy = round((total_correct / total_questions * 100) if total_questions else 0)
 
-        accuracy = round((total_correct / total_questions * 100) if total_questions else 0)
+            topic_stats = {}
+            for ans in answers:
+                topic = ans.question.topic
+                if topic not in topic_stats:
+                    topic_stats[topic] = {"total": 0, "correct": 0}
+                topic_stats[topic]["total"] += 1
+                if ans.is_correct:
+                    topic_stats[topic]["correct"] += 1
 
-        report = {
-            "total_sessions": total_sessions,
-            "total_questions": total_questions,
-            "accuracy": accuracy,
-            "avg_score": round(total_correct / total_sessions) if total_sessions else 0,
-            "overall_dna": overall_dna,
-            "sessions": [
-                {
-                    "id": str(s.id),
-                    "subject": getattr(s, 'subject', 'Mixed'),
-                    "exam": getattr(s, 'exam_type', 'General'),
-                    "date": s.created_at.strftime("%d %b %Y") if hasattr(s, 'created_at') else "N/A",
-                    "questions": getattr(s, 'total_questions', 0),
-                    "score": round((getattr(s, 'correct_count', 0) / max(getattr(s, 'total_questions', 1), 1)) * 100),
-                    "dna": getattr(s, 'dna_analysis', {}),
-                }
-                for s in sessions[:10]
+            topic_wise = []
+            for t, stats in topic_stats.items():
+                topic_wise.append({
+                    "topic": t,
+                    "accuracy": round(stats["correct"] / stats["total"] * 100),
+                    "total": stats["total"]
+                })
+            
+            topic_wise.sort(key=lambda x: x["accuracy"], reverse=True)
+            strongest_topic = topic_wise[0]["topic"] if topic_wise else "–"
+            weakest_topic = topic_wise[-1]["topic"] if topic_wise else "–"
+
+            report = {
+                "total_sessions": total_sessions,
+                "total_questions": total_questions,
+                "accuracy": accuracy,
+                "avg_score": round(total_correct / max(total_sessions, 1)),
+                "overall_dna": overall_dna,
+                "strongest_topic": strongest_topic,
+                "weakest_topic": weakest_topic,
+                "topic_wise": topic_wise,
+                "simple_report": {
+                    "main_issue": max(dna_totals, key=dna_totals.get) if total_failures > 0 else "N/A",
+                    "actionable_tip": "Add a 10-second verification rule before submitting each answer." if dna_totals.get("silly", 0) > dna_totals.get("conceptual", 0) else "Deep dive into fundamentals of your weakest topics.",
+                    "focus_topics": [t["topic"] for t in topic_wise[-3:]] if topic_wise else [],
+                    "stable_topics": [t["topic"] for t in topic_wise[:2]] if topic_wise else [],
+                },
+                "sessions": [
+
+                    {
+                        "id": str(s.id),
+                        "subject": s.session_type,
+                        "exam": s.exam_target,
+                        "date": s.started_at.strftime("%d %b %Y"),
+                        "questions": len(s.questions) if s.questions else 0,
+                        "score": round(s.score_pct) if s.score_pct else 0,
+                        "dna": {"conceptual": 0, "silly": 0, "time": 0, "recall": 0},
+                    }
+                    for s in sessions[:10]
+                ],
+            }
+            return Response(report)
+
+        except Exception as e:
+            return Response(self.get_mock_dna_data())
+
+    def get_mock_dna_data(self):
+        return {
+            "total_sessions": 0,
+            "total_questions": 0,
+            "accuracy": 0,
+            "avg_score": 0,
+            "overall_dna": {"conceptual": 35, "silly": 25, "time": 20, "recall": 20},
+            "topic_wise": [],
+            "sessions": [],
+            "recommendations": [
+                "Complete at least 5 quiz sessions to see your personalized DNA analysis.",
+                "Focus on weak subjects first before attempting mock tests.",
+                "Review your incorrect answers immediately after each quiz.",
             ],
         }
-        return JsonResponse(report)
-
-    except Exception:
-        # Return mock data if models aren't available yet
-        return JsonResponse(get_mock_dna_data())
-
-
-def get_mock_dna_data():
-    """Returns sample data when no sessions exist."""
-    return {
-        "total_sessions": 0,
-        "total_questions": 0,
-        "accuracy": 0,
-        "avg_score": 0,
-        "overall_dna": {"conceptual": 35, "silly": 25, "time": 20, "recall": 20},
-        "topic_wise": [],
-        "sessions": [],
-        "recommendations": [
-            "Complete at least 5 quiz sessions to see your personalized DNA analysis.",
-            "Focus on weak subjects first before attempting mock tests.",
-            "Review your incorrect answers immediately after each quiz.",
-        ],
-    }
