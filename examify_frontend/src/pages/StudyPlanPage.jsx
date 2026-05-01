@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Calendar, Star, Lock, Play, FileText, CheckCircle, Flag } from "lucide-react";
+import { Star, Lock, Play, FileText, CheckCircle, Flag, Zap, Trophy, ChevronRight } from "lucide-react";
 import { useApiClient } from "../lib/useApiClient";
 import AppShell from "../components/AppShell";
 
 export default function StudyPlanPage() {
   const { apiFetch } = useApiClient();
-  const [persona, setPersona] = useState(null); // 'scholar' or 'dropout'
+  const [persona, setPersona] = useState(null); 
   const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(false);
   const [userExam, setUserExam] = useState("");
@@ -34,39 +34,30 @@ export default function StudyPlanPage() {
       });
       const data = await res.json();
       setPlan(data);
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
     setLoading(false);
   };
 
   if (!persona && !plan) {
     return (
       <AppShell activePath="/study-plan">
-        <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center p-6 font-sans">
-          <div className="max-w-2xl w-full text-center">
-            <h1 className="text-5xl font-black mb-4 tracking-tight">Personalize Your Path</h1>
-            <p className="text-gray-400 text-lg mb-12">Are you a focused scholar or a comeback dropout? We'll tailor the map for you.</p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <button 
-                onClick={() => generatePlan('scholar')}
-                className="bg-gray-950 border border-gray-900 p-10 rounded-[2.5rem] hover:border-yellow-500/50 transition-all group"
-              >
-                <Star size={48} className="text-yellow-500 mx-auto mb-6 group-hover:scale-110 transition-transform" />
-                <h3 className="text-2xl font-bold text-white mb-2">The Scholar</h3>
-                <p className="text-gray-500 text-sm">Consistent, structured, and deep-dive learning path.</p>
-              </button>
-
-              <button 
-                onClick={() => generatePlan('dropout')}
-                className="bg-gray-950 border border-gray-900 p-10 rounded-[2.5rem] hover:border-red-500/50 transition-all group"
-              >
-                <Flag size={48} className="text-red-500 mx-auto mb-6 group-hover:scale-110 transition-transform" />
-                <h3 className="text-2xl font-bold text-white mb-2">The Dropout</h3>
-                <p className="text-gray-500 text-sm">High-intensity, recovery-focused, comeback strategy.</p>
-              </button>
-            </div>
+        <div className="p-6 lg:p-12 max-w-4xl mx-auto flex flex-col justify-center min-h-[80vh]">
+          <div className="text-center mb-16">
+            <h1 className="text-5xl font-black mb-4">Choose Your Path</h1>
+            <p className="text-[var(--text-muted)] text-lg">AI-tailored curriculum for {userExam}</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <button onClick={() => generatePlan('scholar')} className="card-simple p-10 text-center hover:scale-105">
+              <Star size={40} className="text-yellow-500 mx-auto mb-6" />
+              <h3 className="text-2xl font-bold mb-2">The Scholar</h3>
+              <p className="text-sm text-[var(--text-muted)]">Consistent, deep-dive conceptual mastery.</p>
+            </button>
+            <button onClick={() => generatePlan('dropout')} className="card-simple p-10 text-center hover:scale-105">
+              <Flag size={40} className="text-red-500 mx-auto mb-6" />
+              <h3 className="text-2xl font-bold mb-2">The Dropout</h3>
+              <p className="text-sm text-[var(--text-muted)]">High-intensity recovery and comeback logic.</p>
+            </button>
           </div>
         </div>
       </AppShell>
@@ -76,10 +67,9 @@ export default function StudyPlanPage() {
   if (loading) {
     return (
       <AppShell activePath="/study-plan">
-        <div className="min-h-screen bg-[var(--bg)] flex flex-col items-center justify-center p-6">
-          <div className="w-16 h-16 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-          <h2 className="text-2xl font-bold text-white">Carving Your Roadmap...</h2>
-          <p className="text-gray-500 mt-2">Placing milestones for your {persona} journey.</p>
+        <div className="p-6 lg:p-12 flex flex-col items-center justify-center min-h-[80vh]">
+          <div className="w-12 h-12 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+          <p className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-widest">Building Roadmap...</p>
         </div>
       </AppShell>
     );
@@ -87,79 +77,90 @@ export default function StudyPlanPage() {
 
   return (
     <AppShell activePath="/study-plan">
-      <div className="min-h-screen bg-[var(--bg)] p-6 lg:p-12 font-sans">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex justify-between items-end mb-16">
-            <div>
-              <p className="text-yellow-500 font-black text-xs uppercase tracking-[0.2em] mb-2">Personalized Roadmap</p>
-              <h1 className="text-5xl font-black text-white tracking-tight">{plan?.estimated_exam} Strategy</h1>
-            </div>
-            <div className="text-right">
-              <span className={`px-4 py-1 rounded-full text-xs font-black uppercase tracking-widest ${
-                persona === 'scholar' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-red-500/10 text-red-500'
-              }`}>
-                Mode: {persona}
-              </span>
-            </div>
+      <div className="p-4 lg:p-8 w-full mx-auto">
+        <div className="flex justify-between items-end mb-16 pb-8 border-b border-[var(--border)]">
+          <div>
+            <p className="text-[var(--accent)] font-bold text-xs uppercase tracking-widest mb-1">Strategic Path</p>
+            <h1 className="text-4xl font-black">{plan?.estimated_exam} Objective</h1>
           </div>
+          <div className="text-right">
+            <span className="text-xs font-bold px-3 py-1 bg-[var(--surface-hover)] rounded-lg text-[var(--text-muted)] uppercase tracking-widest">{persona} Mode</span>
+          </div>
+        </div>
 
-          {/* Candy Crush Vertical Map */}
-          <div className="relative flex flex-col items-center">
-             {/* Path Line */}
-            <div className="absolute top-0 bottom-0 w-1 bg-gradient-to-b from-yellow-500/50 via-gray-800 to-transparent z-0"></div>
+        <div className="relative max-w-2xl mx-auto py-10">
+          {/* SVG Path */}
+          <svg className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-20" preserveAspectRatio="none">
+            <path
+              d={plan?.nodes?.reduce((acc, _, i) => {
+                const x = i % 2 === 0 ? "20%" : "80%";
+                const y = (i * 180) + 90;
+                return i === 0 ? `M ${x} ${y}` : `${acc} L ${x} ${y}`;
+              }, "")}
+              stroke="var(--accent)"
+              strokeWidth="8"
+              fill="none"
+              strokeDasharray="16 12"
+            />
+          </svg>
 
-            <div className="space-y-24 w-full relative z-10">
-              {plan?.nodes?.map((node, i) => (
-                <div key={node.id} className={`flex items-center w-full ${i % 2 === 0 ? 'flex-row' : 'flex-row-reverse'}`}>
-                  {/* The Node Bubble */}
-                  <div className="w-1/2 flex justify-center">
-                    <div className={`relative w-24 h-24 rounded-full border-4 flex items-center justify-center shadow-2xl transition-all cursor-pointer hover:scale-110 active:scale-95 ${
-                      i === 0 ? 'bg-yellow-500 border-white text-black animate-pulse' : 'bg-gray-900 border-gray-800 text-gray-500'
-                    }`}>
-                      {node.type === 'video' ? <Play size={32} /> : node.type === 'quiz' ? <Star size={32} /> : <FileText size={32} />}
-                      
-                      {/* Flag - Dark/Gold/Silver */}
-                      <div className={`absolute -top-4 -right-4 w-10 h-10 rounded-lg flex items-center justify-center shadow-lg transform rotate-12 border-2 ${
-                        node.flag === 'dark' ? 'bg-black border-gray-800 text-gray-400' :
-                        node.flag === 'gold' ? 'bg-yellow-500 border-yellow-300 text-black' : 'bg-gray-400 border-gray-200 text-black'
-                      }`}>
-                        <Flag size={20} fill="currentColor" />
+          <div className="space-y-12">
+            {plan?.nodes?.map((node, i) => {
+              const isRight = i % 2 !== 0;
+              const flagColor = {
+                'dark': '#1a1a1a',
+                'gold': '#fbbf24',
+                'silver': '#94a3b8'
+              }[node.flag] || 'var(--accent)';
+
+              return (
+                <div key={node.id} className={`flex ${isRight ? 'flex-row-reverse' : 'flex-row'} items-center gap-4 relative z-10`}>
+                  {/* The Level Node */}
+                  <div className="relative">
+                    <button 
+                      className={`w-20 h-20 rounded-full flex flex-col items-center justify-center shadow-xl border-4 transition-all hover:scale-110 active:scale-95 ${
+                        i === 0 ? "bg-[var(--accent)] border-white animate-bounce" : "bg-[var(--surface-2)] border-[var(--border)]"
+                      }`}
+                    >
+                      <Flag size={24} style={{ color: flagColor }} fill={flagColor} />
+                      <span className={`text-[10px] font-black mt-1 ${i === 0 ? 'text-black' : 'text-[var(--text-muted)]'}`}>
+                        {i + 1}
+                      </span>
+                    </button>
+                    {i === 0 && (
+                      <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap bg-black text-white text-[10px] font-bold px-2 py-1 rounded-lg">
+                        START HERE!
                       </div>
-
-                      {/* Connector Line to Label */}
-                      <div className={`absolute top-1/2 w-12 h-0.5 bg-gray-800 -z-10 ${i % 2 === 0 ? 'left-full' : 'right-full'}`}></div>
-                    </div>
+                    )}
                   </div>
 
-                  {/* Node Description Label */}
-                  <div className={`w-1/2 ${i % 2 === 0 ? 'pl-12' : 'pr-12 text-right'}`}>
-                    <div className="bg-gray-950 border border-gray-900 p-6 rounded-[2rem] shadow-xl inline-block max-w-sm">
-                      <p className="text-[10px] font-black text-gray-600 uppercase tracking-widest mb-1">{node.subject}</p>
-                      <h4 className="text-lg font-bold text-white mb-2">{node.label}</h4>
-                      <p className="text-xs text-gray-400 leading-relaxed">{node.description}</p>
-                      
-                      <div className="mt-4 flex items-center gap-2">
-                        {i === 0 ? (
-                          <button className="bg-yellow-500 text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest">Start Mission</button>
-                        ) : (
-                          <div className="flex items-center gap-2 text-gray-700 text-[10px] font-black uppercase">
-                            <Lock size={12} /> Locked
-                          </div>
-                        )}
-                      </div>
+                  {/* Task Info Card */}
+                  <div className={`flex-1 ${isRight ? 'text-right' : 'text-left'}`}>
+                    <div className="card-simple p-4 inline-block max-w-[280px]">
+                      <h4 className="text-sm font-black mb-1 flex items-center gap-2 justify-between">
+                         {!isRight && <span className="text-[10px] text-[var(--text-muted)]">LVL {i+1}</span>}
+                         {node.label}
+                         {isRight && <span className="text-[10px] text-[var(--text-muted)]">LVL {i+1}</span>}
+                      </h4>
+                      <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                        {node.description}
+                      </p>
+                      {i === 0 && (
+                         <button className="mt-3 w-full bg-[var(--accent)] text-black font-bold py-2 rounded-xl text-[10px] uppercase">
+                           Start Lesson
+                         </button>
+                      )}
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-
-            <div className="mt-32 pb-20 text-center">
-              <div className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center mx-auto mb-6 border border-gray-800">
-                <CheckCircle className="text-gray-700" size={32} />
-              </div>
-              <h3 className="text-xl font-bold text-gray-600 tracking-tight">End of Strategy</h3>
-              <p className="text-gray-700 text-sm mt-2">More levels unlock as you complete current missions.</p>
-            </div>
+              );
+            })}
+          </div>
+          
+          <div className="mt-20 text-center">
+             <Trophy size={48} className="mx-auto text-yellow-500 mb-4" />
+             <h3 className="text-2xl font-black">THE {userExam} SUMMIT</h3>
+             <p className="text-sm text-[var(--text-muted)]">Complete all 25 levels to master the syllabus.</p>
           </div>
         </div>
       </div>

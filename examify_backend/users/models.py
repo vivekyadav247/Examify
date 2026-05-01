@@ -42,6 +42,12 @@ EXAM_TARGET_CHOICES = [
     ("CPA_US", "CPA_US"),
 ]
 
+LANGUAGE_CHOICES = [
+    ("english", "English Medium"),
+    ("hindi", "Hindi Medium"),
+    ("hinglish", "Hinglish Mix"),
+]
+
 PLAN_CHOICES = [
     ("free", "Free"),
     ("pro", "Pro"),
@@ -55,6 +61,7 @@ class ExamifyUser(models.Model):
     password = models.CharField(max_length=128, null=True, blank=True)
     full_name = models.CharField(max_length=255)
     exam_target = models.CharField(max_length=32, choices=EXAM_TARGET_CHOICES)
+    language = models.CharField(max_length=15, choices=LANGUAGE_CHOICES, default="hinglish")
     plan = models.CharField(max_length=10, choices=PLAN_CHOICES, default="free")
     plan_expiry = models.DateTimeField(null=True, blank=True)
     credits_remaining = models.IntegerField(
@@ -146,3 +153,21 @@ class LeaderboardEntry(models.Model):
 
     def __str__(self) -> str:
         return f"{self.exam_target} - {self.user.full_name} (Rank {self.rank})"
+
+
+class ChatMessage(models.Model):
+    user = models.ForeignKey(
+        ExamifyUser,
+        on_delete=models.CASCADE,
+        related_name="chat_messages",
+    )
+    role = models.CharField(max_length=15)  # user, assistant, system
+    content = models.TextField()
+    exam_context = models.CharField(max_length=32, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.user.full_name} - {self.role} ({self.created_at})"

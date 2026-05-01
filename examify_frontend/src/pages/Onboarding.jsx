@@ -61,7 +61,14 @@ const SUBJECTS = {
     "English Comprehension",
     "General Awareness",
   ],
+  NDA: ["Mathematics", "General Ability Test"],
 };
+
+const LANGUAGES = [
+  { key: "english", name: "English Medium" },
+  { key: "hindi", name: "Hindi Medium" },
+  { key: "hinglish", name: "Hinglish Mix" },
+];
 
 const PLANS = [
   {
@@ -105,6 +112,7 @@ export default function Onboarding() {
   const [search, setSearch] = useState("");
   const [selectedExam, setSelectedExam] = useState(null);
   const [weakSubjects, setWeakSubjects] = useState([]);
+  const [selectedLanguage, setSelectedLanguage] = useState("hinglish");
   const [selectedPlan, setSelectedPlan] = useState("free");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -189,6 +197,7 @@ export default function Onboarding() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             exam_target: selectedExam.key,
+            language: selectedLanguage,
             onboarding_completed: true,
           }),
         }),
@@ -246,7 +255,7 @@ export default function Onboarding() {
 
       <main className="mx-auto max-w-5xl px-4 pb-14 md:px-8">
         <div className="mb-8 flex items-center gap-2">
-          {[0, 1, 2, 3].map((d) => (
+          {[0, 1, 2, 3, 4].map((d) => (
             <span
               key={d}
               className="h-2.5 flex-1 rounded-full transition-colors"
@@ -393,8 +402,56 @@ export default function Onboarding() {
           </section>
         )}
 
-        {/* Step 2: Plan */}
+        {/* Step 2: Language */}
         {step === 2 && (
+          <section className="anim-pop-in">
+            <h2 className="font-display text-3xl md:text-4xl">
+              Preferred Medium?
+            </h2>
+            <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
+              Choose the language for your notes and AI mentorship.
+            </p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              {LANGUAGES.map((l) => {
+                const active = selectedLanguage === l.key;
+                return (
+                  <button
+                    key={l.key}
+                    onClick={() => setSelectedLanguage(l.key)}
+                    className="rounded-xl border px-4 py-4 text-center transition"
+                    style={{
+                      borderColor: active ? "var(--accent)" : "var(--border)",
+                      backgroundColor: active
+                        ? "var(--surface-2)"
+                        : "var(--surface)",
+                    }}
+                  >
+                    <p className="font-bold">{l.name}</p>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-8 flex flex-wrap justify-between gap-3">
+              <button
+                onClick={() => setStep(1)}
+                className="rounded-full border px-5 py-2"
+                style={{ borderColor: "var(--border)" }}
+              >
+                Back
+              </button>
+              <button
+                onClick={() => setStep(3)}
+                className="rounded-full px-5 py-2 font-semibold"
+                style={{ backgroundColor: "var(--accent)", color: accentText }}
+              >
+                Continue
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* Step 3: Plan */}
+        {step === 3 && (
           <section className="anim-pop-in">
             <h2 className="font-display text-3xl md:text-4xl">
               Choose Your Plan
@@ -435,14 +492,14 @@ export default function Onboarding() {
             </div>
             <div className="mt-8 flex flex-wrap justify-between gap-3">
               <button
-                onClick={() => setStep(1)}
+                onClick={() => setStep(2)}
                 className="rounded-full border px-5 py-2"
                 style={{ borderColor: "var(--border)" }}
               >
                 Back
               </button>
               <button
-                onClick={() => setStep(3)}
+                onClick={() => setStep(4)}
                 className="rounded-full px-6 py-3 font-semibold"
                 style={{ backgroundColor: "var(--accent)", color: accentText }}
               >
@@ -454,8 +511,8 @@ export default function Onboarding() {
           </section>
         )}
 
-        {/* Step 3: Confirm */}
-        {step === 3 && (
+        {/* Step 4: Confirm */}
+        {step === 4 && (
           <section className="anim-pop-in text-center">
             <div
               className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-full text-sm font-semibold"

@@ -432,6 +432,62 @@ export default function Profile() {
             )}
           </section>
         )}
+
+        <section
+          className="mt-6 rounded-2xl border p-4 mb-10"
+          style={{
+            borderColor: "var(--border)",
+            backgroundColor: "var(--surface)",
+          }}
+        >
+          <h2 className="font-display text-xl mb-4">Account Settings</h2>
+          <div className="grid gap-6 md:grid-cols-2">
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-[var(--text-muted)] mb-2 font-bold">Medium of Study</label>
+              <div className="flex gap-2">
+                {['english', 'hindi', 'hinglish'].map(l => (
+                  <button
+                    key={l}
+                    onClick={async () => {
+                      await apiFetch("/api/users/me/update/", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ language: l }),
+                      });
+                      setUser({ ...user, language: l });
+                    }}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${user.language === l ? 'bg-[var(--accent)] text-black border-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--text)]'}`}
+                  >
+                    {l.charAt(0).toUpperCase() + l.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs uppercase tracking-widest text-[var(--text-muted)] mb-2 font-bold">Target Exam</label>
+              <select 
+                value={user.exam_target}
+                onChange={async (e) => {
+                   const val = e.target.value;
+                   await apiFetch("/api/users/me/update/", {
+                     method: "PATCH",
+                     headers: { "Content-Type": "application/json" },
+                     body: JSON.stringify({ exam_target: val }),
+                   });
+                   window.location.reload(); 
+                }}
+                className="w-full bg-[var(--surface-2)] border border-[var(--border)] rounded-xl px-4 py-2 text-sm outline-none focus:border-[var(--accent)]"
+              >
+                <option value="JEE_Mains">JEE Mains</option>
+                <option value="NEET">NEET</option>
+                <option value="UPSC_CSE">UPSC CSE</option>
+                <option value="NDA">NDA</option>
+                <option value="SSC_CGL">SSC CGL</option>
+              </select>
+            </div>
+          </div>
+        </section>
       </div>
     </AppShell>
   );

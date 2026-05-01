@@ -74,7 +74,17 @@ export default function AIChatPage() {
         }
       } catch (e) {}
     }
+    async function loadHistory() {
+      try {
+        const res = await apiFetch("/api/chat/");
+        if (res.ok) {
+          const data = await res.json();
+          setMessages(data);
+        }
+      } catch (e) {}
+    }
     loadUser();
+    loadHistory();
   }, [apiFetch]);
 
   const persona = EXAM_PERSONAS[exam] || EXAM_PERSONAS["general"];
@@ -95,9 +105,7 @@ export default function AIChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           exam, 
-          message: text, 
-          history: messages,
-          system_override: "You are a top-tier Indian exam mentor. Explain everything in simple Hinglish. Be encouraging but direct. Use bullet points for complex topics."
+          message: text 
         }),
       });
       const data = await res.json();

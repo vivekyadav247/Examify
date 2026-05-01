@@ -12,6 +12,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             "email",
             "full_name",
             "exam_target",
+            "language",
             "plan",
             "credits_remaining",
             "xp",
@@ -24,6 +25,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
 
 class UpdateUserSerializer(serializers.Serializer):
     exam_target = serializers.ChoiceField(choices=EXAM_TARGET_CHOICES, required=False)
+    language = serializers.CharField(required=False)
     avatar_url = serializers.URLField(required=False, allow_null=True, allow_blank=True)
     onboarding_completed = serializers.BooleanField(required=False)
 
@@ -32,7 +34,7 @@ class UpdateUserSerializer(serializers.Serializer):
             return instance
 
         update_fields = []
-        for field in ("exam_target", "avatar_url"):
+        for field in ("exam_target", "avatar_url", "language"):
             if field in validated_data:
                 setattr(instance, field, validated_data[field])
                 update_fields.append(field)

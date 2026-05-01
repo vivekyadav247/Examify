@@ -10,7 +10,6 @@ import LandingPage from "./pages/LandingPage";
 import Onboarding from "./pages/Onboarding";
 import Profile from "./pages/Profile";
 import Quiz from "./pages/Quiz";
-import TopicMap from "./pages/TopicMap";
 import SyllabusPage from "./pages/SyllabusPage";
 import NotesPage from "./pages/NotesPage";
 import StudyPlanPage from "./pages/StudyPlanPage";
@@ -263,7 +262,7 @@ export default function App() {
         element={
           <Protected>
             <SetupRequired>
-              <TopicMap />
+              <StudyPlanPage />
             </SetupRequired>
           </Protected>
         }

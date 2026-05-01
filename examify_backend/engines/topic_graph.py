@@ -89,6 +89,18 @@ EXAM_SUBJECTS = {
             "Basic Numeracy",
         ],
     },
+    "NDA": {
+        "Mathematics": [
+            "Algebra", "Matrices & Determinants", "Trigonometry", 
+            "Analytical Geometry 2D/3D", "Differential Calculus", 
+            "Integral Calculus", "Vector Algebra", "Statistics & Probability"
+        ],
+        "General Ability Test": [
+            "English Grammar", "Vocabulary", "Physics", "Chemistry", 
+            "General Science", "History & Freedom Movement", 
+            "Geography", "Current Events"
+        ]
+    },
     "CAT": {
         "Verbal Ability": [
             "Reading Comprehension",

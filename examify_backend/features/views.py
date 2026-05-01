@@ -15,6 +15,7 @@ from rest_framework.exceptions import ValidationError
 from engines.question_gen import client as groq_client, _get_model
 from engines.question_gen import get_or_generate, generate_diagnostic_set
 from quiz.models import Question, QuizSession, SessionAnswer
+from users.models import ChatMessage
 
 EXAM_SLUG_MAP = {
     "upsc": "UPSC_CSE",
@@ -229,7 +230,14 @@ class GenerateNotesView(APIView):
         }
 
         prompt = type_prompts.get(note_type, type_prompts["quick"])
-        content = ai_complete(prompt, system=f"You are an expert {exam.upper()} exam tutor. Generate clear, accurate notes.")
+        lang = request.user.language or "hinglish"
+        lang_instruction = {
+            "english": "Write strictly in English.",
+            "hindi": "Write strictly in Hindi.",
+            "hinglish": "Write in simple Hinglish (Hindi + English mix)."
+        }.get(lang, "Write in simple Hinglish.")
+
+        content = ai_complete(f"{prompt}\nLANGUAGE INSTRUCTION: {lang_instruction}", system=f"You are an expert {exam.upper()} exam tutor. Generate clear, accurate notes.")
         return Response({"content": content, "topic": topic, "exam": exam, "note_type": note_type})
 
 
@@ -243,43 +251,44 @@ class GeneratePlanView(APIView):
     def post(self, request):
         exam = request.data.get("exam", "upsc")
         persona = request.data.get("persona", "scholar") # scholar or dropout
+        lang = request.user.language or "hinglish"
         
         # Automatic exam month estimation if not provided
         current_month = "May" 
         estimated_exam_month = "June" if exam == "jee" else "October" if exam == "upsc" else "August"
 
-        prompt = f"""Create a premium vertical 'Candy Crush' style study roadmap for a {persona} student preparing for {exam.upper()}.
+        lang_instruction = {
+            "english": "Strictly English.",
+            "hindi": "Strictly Hindi.",
+            "hinglish": "Simple Hinglish (Hindi + English mix)."
+        }.get(lang, "Hinglish.")
+
+        prompt = f"""Create a comprehensive vertical 'Candy Crush' style study roadmap for a {persona.upper()} student preparing for {exam.upper()}.
 Current Month: {current_month}
 Target Exam Month: {estimated_exam_month}
-Student Type: {persona.upper()} (Adjust intensity and tone accordingly)
+Student Type: {persona.upper()} (Scholar = fast-paced, complex topics first; Dropout = foundational, step-by-step logic).
+Language: {lang_instruction}
 
-Return exactly 12 nodes for a vertical progression.
+The roadmap MUST cover the syllabus in detail, broken down into 25 micro-milestones arranged in a single vertical path.
+Each node represents a specific sub-topic.
+
+Return exactly 25 nodes.
 Each node must have:
-- id: unique string
-- label: Topic name
-- status: 'locked' (always for new plan)
-- subject: Subject name
-- type: 'video' | 'quiz' | 'revision'
-- flag: 'dark' | 'gold' | 'silver' (use 'dark' for hard topics)
+- id: "node_1", "node_2", etc.
+- label: Detailed Sub-topic name.
+- subject: Major Subject.
+- type: "video" | "quiz" | "revision"
+- flag: "dark" (very hard), "gold" (important), "silver" (easy)
+- description: Action item in {lang_instruction}.
 
 Return ONLY valid JSON:
 {{
   "exam_target": "{exam}",
   "persona": "{persona}",
   "estimated_exam": "{estimated_exam_month}",
-  "nodes": [
-    {{
-      "id": "node_1",
-      "label": "Atomic Structure Basics",
-      "subject": "Chemistry",
-      "type": "video",
-      "flag": "gold",
-      "description": "Master the fundamentals of Bohr's model."
-    }}
-  ]
+  "nodes": [...] 
 }}
-Return ONLY JSON."""
-
+"""
         raw = ai_complete(prompt, max_tokens=3000)
         try:
             data = json.loads(raw.strip().lstrip("```json").rstrip("```"))
@@ -296,10 +305,23 @@ Return ONLY JSON."""
 class AIChatView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def get(self, request):
+        messages = ChatMessage.objects.filter(user=request.user).order_by("created_at")[:50]
+        return Response([{
+            "role": m.role,
+            "content": m.content,
+            "created_at": m.created_at
+        } for m in messages])
+
     def post(self, request):
         exam = request.data.get("exam", "general")
-        message = request.data.get("message", "")
-        history = request.data.get("history", [])
+        message_text = request.data.get("message", "")
+        # Save user message
+        ChatMessage.objects.create(user=request.user, role="user", content=message_text, exam_context=exam)
+        
+        # Load last 10 messages from DB for context (oldest first for AI)
+        history = list(ChatMessage.objects.filter(user=request.user).order_by("-created_at")[:10])
+        history.reverse() 
 
         exam_systems = {
             "upsc": "You are an expert IAS mentor helping UPSC CSE aspirants. You know Indian history, polity, economy, geography, current affairs. Give precise, exam-relevant answers. Use examples. Explain in simple Hinglish (Hindi + English) so it's very easy to understand.",
@@ -311,12 +333,17 @@ class AIChatView(APIView):
         }
 
         system = exam_systems.get(exam, exam_systems["general"])
+        lang = request.user.language or "hinglish"
+        lang_instruction = {
+            "english": "Respond strictly in English.",
+            "hindi": "Respond strictly in Hindi.",
+            "hinglish": "Respond in simple Hinglish (Hindi + English mix)."
+        }.get(lang, "Respond in simple Hinglish.")
 
         try:
-            messages = [{"role": "system", "content": system}]
-            for h in history[-10:]:
-                messages.append({"role": h["role"], "content": h["content"]})
-            messages.append({"role": "user", "content": message})
+            messages = [{"role": "system", "content": f"{system}\nLANGUAGE INSTRUCTION: {lang_instruction}"}]
+            for h in history:
+                messages.append({"role": h.role, "content": h.content})
 
             response = groq_client.chat.completions.create(
                 model=_get_model(),
@@ -324,6 +351,8 @@ class AIChatView(APIView):
                 messages=messages,
             )
             reply = response.choices[0].message.content
+            # Save assistant message
+            ChatMessage.objects.create(user=request.user, role="assistant", content=reply, exam_context=exam)
             return Response({"reply": reply})
         except Exception as e:
             return Response({"reply": f"Error: {str(e)}"}, status=500)
@@ -390,7 +419,7 @@ class GenerateMockTestView(APIView):
         exam = get_real_exam_key(exam_slug)
         num_questions = min(int(request.data.get("num_questions", 100)), 200) 
         subject = request.data.get("subject", "mixed")
-
+        lang = request.user.language or "english"
 
         # Get questions the user has already answered to avoid repeats
         answered_question_ids = SessionAnswer.objects.filter(
@@ -400,15 +429,16 @@ class GenerateMockTestView(APIView):
         questions_list = []
         
         if subject == "mixed":
-            # Use diagnostic generator which spans multiple subjects
-            generated_qs = generate_diagnostic_set(exam)
-            # Filter out seen questions
-            unseen = [q for q in generated_qs if q.id not in answered_question_ids]
-            
-            # If still not enough, we fallback to random or accept shortage
-            questions_list = unseen[:num_questions]
-            if len(questions_list) < num_questions:
-                questions_list.extend([q for q in generated_qs if q not in unseen][:num_questions - len(questions_list)])
+            if exam == "JEE_Mains":
+                # Special logic for JEE: 25 per subject
+                subjects = ["Physics", "Chemistry", "Mathematics"]
+                for s in subjects:
+                    generated_qs = generate_diagnostic_set(exam, target_count=25, subject_override=s, language=lang)
+                    questions_list.extend(generated_qs[:25])
+            else:
+                # Use diagnostic generator which spans multiple subjects
+                generated_qs = generate_diagnostic_set(exam, target_count=num_questions, language=lang)
+                questions_list = generated_qs[:num_questions]
         else:
             # Query specific topic/subject, generate if short
             generated_qs = get_or_generate(
@@ -417,7 +447,8 @@ class GenerateMockTestView(APIView):
                 exam=exam,
                 subject=subject,
                 min_count=num_questions,
-                exclude_ids=list(answered_question_ids)
+                exclude_ids=list(answered_question_ids),
+                language=lang
             )
             questions_list = generated_qs[:num_questions]
 

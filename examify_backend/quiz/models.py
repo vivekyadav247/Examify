@@ -7,6 +7,13 @@ from django.db import models
 from users.models import EXAM_TARGET_CHOICES, ExamifyUser
 
 
+LANGUAGE_CHOICES = [
+    ("english", "English"),
+    ("hindi", "Hindi"),
+    ("hinglish", "Hinglish"),
+]
+
+
 def validate_four_options(value):
     if not isinstance(value, list) or len(value) != 4:
         raise ValidationError("options must be a JSON array containing exactly 4 strings.")
@@ -41,6 +48,7 @@ class Question(models.Model):
         validators=[MinValueValidator(0), MaxValueValidator(3)]
     )
     explanation = models.TextField()
+    language = models.CharField(max_length=15, choices=LANGUAGE_CHOICES, default="english")
     source_type = models.CharField(max_length=24, choices=SOURCE_TYPE_CHOICES)
     created_at = models.DateTimeField(auto_now_add=True)
 

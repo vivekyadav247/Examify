@@ -228,14 +228,10 @@ def _question_signature(question_text, options):
     return f"{q}||{'|'.join(opts)}"
 
 
-def _build_generation_prompt(topic, difficulty, exam, subject, context_text, count, topic_desc=None):
-    """Build the AI prompt for question generation with exam-specific context.
-
-    Uses topic descriptions (subtopics, exam patterns, difficulty calibration)
-    to generate questions that match the real exam style.
-    """
+def _build_prompt(topic, difficulty, exam, subject, count, topic_desc=None, language="english"):
+    """Build the AI prompt for question generation with exam-specific context."""
     difficulty_label = (
-        "very easy (direct recall/formula)" if difficulty < 0.25 else
+        "basic (direct recall)" if difficulty < 0.40 else
         "easy (single-step application)" if difficulty < 0.40 else
         "medium (two-step reasoning)" if difficulty < 0.60 else
         "hard (multi-step, traps involved)" if difficulty < 0.80 else
@@ -250,61 +246,33 @@ def _build_generation_prompt(topic, difficulty, exam, subject, context_text, cou
         pattern_hint = f"\nExam-specific pattern & traps: {topic_desc.get('exam_pattern', '')}"
         pattern_hint += f"\nDifficulty calibration: {topic_desc.get('difficulty_notes', '')}"
 
-    subject_strategy = ""
-    if subject:
-        subject_strategy = (
-            f"\nSubject-specific solving style for {subject}:"
-            "\n- Use notation, terminology, and solution form expected in this subject."
-            "\n- Keep distractors aligned to common mistakes seen in this subject."
-            "\n- Avoid generic cross-subject wording."
-        )
+    lang_instruction = {
+        "english": "Respond strictly in English.",
+        "hindi": "Respond strictly in Hindi.",
+        "hinglish": "Respond in simple Hinglish (Hindi + English mix)."
+    }.get(language, "Respond in English.")
 
-    if context_text:
-        return (
-            f"You are an expert {exam} question setter.\n"
-            f"Generate {count} MCQ questions based ONLY on this content:\n---\n{context_text[:4000]}\n---\n"
-            f"Topic: {topic} | Subject: {subject} | Exam: {exam}\n"
-            f"Difficulty: {difficulty:.2f}/1.0 ({difficulty_label})\n"
-            f"{subtopic_hint}\n"
-            f"{subject_strategy}\n"
-            "RULES:\n"
-            "1. Each question must test ONE specific concept.\n"
-            "2. All 4 options must be plausible — no obviously wrong answers.\n"
-            "3. Distractors must represent real student errors for this exam.\n"
-            "4. Explanation: (a) state correct approach, (b) explain why each wrong option fails.\n"
-            "5. Every question in the batch must be unique. Do NOT repeat same stem with tiny rewording.\n"
-            "6. Return ONLY a JSON array. No markdown. No preamble. No trailing text.\n"
-            'Each item: {"question": str, "subtopic": str, "options": [str,str,str,str], "answer": int (0-3), "explanation": str (max 80 words)}'
-        )
-    else:
-        return (
-            f"You are an expert {exam} question setter. Your questions will appear in a real {exam} mock test.\n\n"
-            f"Subject: {subject}\n"
-            f"Topic: {topic}\n"
-            f"Exam: {exam}\n"
-            f"Difficulty: {difficulty:.2f}/1.0 ({difficulty_label})\n"
-            f"{subtopic_hint}"
-            f"{pattern_hint}\n\n"
-            f"{subject_strategy}\n\n"
-            f"Generate exactly {count} MCQ questions. Follow these rules strictly:\n"
-            f"1. Questions must match real {exam} style — use the exact language, structure, and trap types from actual {exam} papers.\n"
-            "2. All 4 options must be plausible. No obviously wrong options.\n"
-            f"3. Distractors must represent the most common student mistakes in {exam} for this topic.\n"
-            "4. Difficulty must match the specified level exactly — do NOT generate all questions at the same difficulty.\n"
-            "5. Explanation must: (a) show correct step-by-step approach, (b) identify what each wrong option assumes.\n"
-            "6. All questions in this output must be unique and non-repetitive.\n"
-            "7. Return ONLY a JSON array. No markdown fences. No preamble. No extra text.\n\n"
-            'Each item format: {"question": str, "subtopic": str, "options": [str,str,str,str], "answer": int (0-3), "explanation": str (max 80 words)}'
-        )
+    return (
+        f"You are a Senior Question Paper Setter for {exam.upper()} competitive exams.\n"
+        f"Generate {count} unique, high-quality Multiple Choice Questions (MCQs) for the topic '{topic}' in the subject '{subject}'.\n"
+        f"LANGUAGE: {lang_instruction}\n"
+        f"Difficulty level: {difficulty_label}.\n"
+        f"Topic Focus: {topic_desc.get('description', topic) if topic_desc else topic}\n"
+        f"{subtopic_hint}\n"
+        f"{pattern_hint}\n"
+        f"\nCRITICAL INSTRUCTIONS:\n"
+        f"1. QUALITY: Questions must be conceptually deep, avoiding direct theory. Use numericals, case-based logic, or statement-wise analysis (I, II, III).\n"
+        f"2. TRAPS: Include one 'distractor' option that is a common student mistake.\n"
+        f"3. TONE: Strictly professional academic tone. Use Hinglish only where essential for clarity, otherwise English.\n"
+        f"4. NO REPETITION: Every question must test a different angle of '{topic}'.\n"
+        f"5. OUTPUT: Return ONLY a JSON array. No markdown, no preamble.\n"
+        f"\nJSON Format:\n"
+        f"[{{ \"question\": \"...\", \"options\": [\"opt1\", \"opt2\", \"opt3\", \"opt4\"], \"answer\": index_0_to_3, \"explanation\": \"Detailed step-by-step logic\", \"subtopic\": \"specific part\" }}]\n"
+    )
 
 
 def _build_local_fallback_batch(topic, subject, exam, count):
-    """Generate simple template-based fallback questions when AI is unavailable.
-    
-    Currently disabled (returns []) because serving generic template questions
-    confuses users when the AI fails due to rate limits or timeouts. It is better
-    to let the upstream view return a 503 'AI Unavailable' error.
-    """
+    """Generate simple template-based fallback questions when AI is unavailable."""
     return []
 
 
@@ -316,33 +284,28 @@ def generate_question_batch(
     context_text=None,
     count=50,
     db=None,
+    language="english",
 ):
-    """Generate a batch of MCQ questions via AI and save them to the database.
-
-    Uses topic descriptions for exam-specific context. Saves subtopic field
-    from AI response. Falls back to template questions if AI is unavailable.
-    """
+    """Generate a batch of MCQ questions via AI and save them to the database."""
     source_type = "content_extracted" if context_text else "ai_generated"
     topic_desc = _get_topic_description(exam, subject, topic)
+    prompt = _build_prompt(topic, difficulty, exam, subject, count, topic_desc, language)
 
-    prompt = _build_generation_prompt(
-        topic=topic,
-        difficulty=difficulty,
-        exam=exam,
-        subject=subject,
-        context_text=context_text,
-        count=count,
-        topic_desc=topic_desc,
-    )
-
-    data = None
-    try:
-        content = _call_groq(prompt, _get_model(), max_tokens=6000, temperature=0.6, stream=True)
-        data = _extract_json_array(content)
-        if not isinstance(data, list):
-            data = None
-    except Exception as exc:
-        logger.warning("Question generation failed for exam=%s topic=%s: %s", exam, topic, exc)
+    data = []
+    attempts = 0
+    while len(data) < count and attempts < 2:
+        attempts += 1
+        try:
+            content = _call_groq(prompt, _get_model(), max_tokens=6000, temperature=0.6, stream=True)
+            batch = _extract_json_array(content)
+            if isinstance(batch, list):
+                data.extend(batch)
+        except Exception as exc:
+            logger.warning("Question generation failed for exam=%s topic=%s: %s", exam, topic, exc)
+            break
+    
+    if not data:
+        data = None
 
     if data is None:
         logger.warning(
@@ -368,6 +331,7 @@ def generate_question_batch(
             exam_target=exam,
             subject=subject,
             topic=topic,
+            language=language,
             question_text=normalized["question"],
         ).exists():
             continue
@@ -383,6 +347,7 @@ def generate_question_batch(
             options=normalized["options"],
             correct_answer=normalized["answer"],
             explanation=normalized["explanation"],
+            language=language,
             source_type=source_type,
         )
         saved += 1
@@ -399,12 +364,10 @@ def get_or_generate(
     db=None,
     min_count=20,
     exclude_ids=None,
+    language="english",
+    force_refresh=False,
 ):
-    """Return existing questions matching criteria, generating new ones if needed.
-
-    Filters by exam_target, subject, and topic to prevent cross-contamination.
-    Uses a ±0.15 difficulty window around the target.
-    """
+    """Return existing questions matching criteria, generating new ones if needed."""
     model = _get_question_model(db)
     lower = float(difficulty) - 0.15
     upper = float(difficulty) + 0.15
@@ -413,6 +376,7 @@ def get_or_generate(
         exam_target=exam,
         subject=subject,
         topic=topic,
+        language=language,
         difficulty__gte=lower,
         difficulty__lte=upper,
     )
@@ -421,20 +385,22 @@ def get_or_generate(
     if exclude_ids:
         check_qs = check_qs.exclude(id__in=exclude_ids)
 
-    if check_qs.count() < min_count:
+    if check_qs.count() < min_count or force_refresh:
         generate_question_batch(
             topic=topic,
             difficulty=difficulty,
             exam=exam,
             subject=subject,
             context_text=context_text,
-            count=min_count,  # Request exactly what is needed (e.g. 20) instead of 50 to prevent JSON truncation
+            count=min_count,
+            language=language,
             db=db,
         )
         queryset = model.objects.filter(
             exam_target=exam,
             subject=subject,
             topic=topic,
+            language=language,
             difficulty__gte=lower,
             difficulty__lte=upper,
         )
@@ -442,50 +408,60 @@ def get_or_generate(
     return list(queryset)
 
 
-def generate_diagnostic_set(exam, db=None):
-    """Generate a diagnostic question set sampling representative topics per subject.
-
-    Picks first, middle, and last topic from each subject for breadth coverage.
-    Fixed: previously passed subject name as topic name (bug).
-    """
-    subjects = EXAM_SUBJECTS.get(exam, {})
+def generate_diagnostic_set(exam, target_count=30, db=None, subject_override=None, language="english"):
+    """Generate a diagnostic question set sampling representative topics per subject."""
+    all_subjects = EXAM_SUBJECTS.get(exam, {})
     model = _get_question_model(db)
+    
+    if subject_override:
+        subjects = {subject_override: all_subjects.get(subject_override, [])}
+    else:
+        subjects = all_subjects
+
     if not subjects:
         return []
 
-    subject_names = list(subjects.keys())
-    per_subject = max(1, 30 // len(subject_names))
+    per_subject = target_count // len(subjects)
     results = []
 
     for subject_name, topics in subjects.items():
-        # Pick first, middle, and last topic for breadth
-        sampled_topics = topics[:1] + topics[len(topics) // 2 : len(topics) // 2 + 1] + topics[-1:]
-        sampled_topics = list(dict.fromkeys(sampled_topics))  # deduplicate
-        per_topic = max(1, per_subject // len(sampled_topics))
+        subject_qs = []
+        # Target for this subject
+        s_target = per_subject if not subject_override else target_count
+        if not subject_override and subject_name == list(subjects.keys())[-1]:
+            s_target = target_count - len(results)
 
-        for topic_name in sampled_topics:
-            generate_question_batch(
+        # Shuffle topics to get variety
+        import random
+        shuffled_topics = list(topics)
+        random.shuffle(shuffled_topics)
+
+        for topic_name in shuffled_topics:
+            if len(subject_qs) >= s_target:
+                break
+            
+            # Use get_or_generate to ensure we have questions
+            needed = s_target - len(subject_qs)
+            batch = get_or_generate(
                 topic=topic_name,
                 difficulty=0.5,
                 exam=exam,
                 subject=subject_name,
-                context_text=None,
-                count=per_topic,
-                db=db,
+                min_count=min(needed, 10),
+                language=language,
+                db=db
             )
+            subject_qs.extend(batch[:needed])
+        
+        results.extend(subject_qs)
 
-            lower = 0.5 - 0.15
-            upper = 0.5 + 0.15
-            queryset = model.objects.filter(
-                exam_target=exam,
-                subject=subject_name,
-                topic=topic_name,
-                difficulty__gte=lower,
-                difficulty__lte=upper,
-            )[:per_topic]
-            results.extend(list(queryset))
+    # Final top-up from any topic if still short
+    if len(results) < target_count:
+        needed = target_count - len(results)
+        extra = model.objects.filter(exam_target=exam).order_by("?")[:needed]
+        results.extend(list(extra))
 
-    return results
+    return results[:target_count]
 
 
 def generate_explanation(

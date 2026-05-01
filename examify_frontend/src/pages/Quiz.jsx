@@ -159,16 +159,24 @@ export default function Quiz() {
     requestedSessionType,
   ]);
 
+  const [batchError, setBatchError] = useState(false);
+
   const fetchNextBatch = useCallback(async () => {
     if (!sessionId || questions.length >= total || fetchingRef.current) return;
     fetchingRef.current = true;
     setFetchingMore(true);
+    setBatchError(false);
     try {
       const r = await apiFetch(`/api/quiz/session/${sessionId}/next-batch/`);
+      if (!r.ok) throw new Error("Batch failed");
       const d = await r.json();
       if (d.questions?.length) {
         setQuestions((p) => [...p, ...d.questions]);
+      } else {
+        setBatchError(true);
       }
+    } catch (e) {
+      setBatchError(true);
     } finally {
       fetchingRef.current = false;
       setFetchingMore(false);
@@ -611,7 +619,7 @@ export default function Quiz() {
                     See Report
                   </a>
                   <a
-                    href="/quiz"
+                    href="/home"
                     className="rounded-full border px-4 py-2 text-sm"
                     style={{ borderColor: "var(--border)" }}
                   >
@@ -620,16 +628,23 @@ export default function Quiz() {
                 </div>
               </div>
             ) : (
-              <button
-                onClick={nextQ}
-                disabled={fetchingMore && current >= questions.length - 1}
-                className="rounded-full px-5 py-2 text-sm font-semibold disabled:opacity-60"
-                style={{ backgroundColor: "var(--accent)", color: "var(--bg)" }}
-              >
-                {fetchingMore && current >= questions.length - 1
-                  ? "Loading next..."
-                  : "Next"}
-              </button>
+              <div className="flex flex-col gap-3">
+                {batchError && (
+                   <p className="text-xs text-red-500 text-center font-bold px-4">
+                     Generation paused. Check connectivity and try clicking "Next Question" again.
+                   </p>
+                )}
+                <button
+                  onClick={nextQ}
+                  disabled={fetchingMore && current >= questions.length - 1}
+                  className="rounded-full px-8 py-4 text-sm font-black shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40"
+                  style={{ backgroundColor: "var(--accent)", color: "var(--bg)" }}
+                >
+                  {fetchingMore && current >= questions.length - 1
+                    ? "Generating next set..."
+                    : "Next Question"}
+                </button>
+              </div>
             )}
           </section>
         )}
